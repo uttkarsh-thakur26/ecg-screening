@@ -1,0 +1,27 @@
+# Python 3.11. Install with:  pip install -r requirements.txt
+# torch comes from PyTorch's CUDA 12.6 index (cu126 runs on NVIDIA driver 560+, e.g. the 566.07
+# installed on the RTX 3050 Laptop). Every other package resolves from PyPI as usual.
+--extra-index-url https://download.pytorch.org/whl/cu126
+torch==2.14.1+cu126
+
+# Data
+numpy==2.4.6
+pandas==3.0.6
+scipy==1.17.1
+wfdb==4.3.1
+requests==2.34.2
+tqdm==4.70.1
+PyYAML==6.0.3
+
+# Modelling and evaluation
+scikit-learn==1.9.1
+matplotlib==3.11.2
+
+# API
+fastapi==0.143.2
+pydantic==2.14.1
+uvicorn[standard]==0.54.0
+python-multipart==0.0.32
+
+# Tests
+pytest==9.1.1

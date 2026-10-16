@@ -1,0 +1,23 @@
+# Dataset, caches and model weights are never committed.
+# Anchored with a leading "/" so that the source package src/data/ is NOT ignored.
+/data/
+/checkpoints/
+
+# Environments and dependencies
+.venv/
+node_modules/
+.env
+
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+
+# Frontend build output
+/frontend/dist/
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/

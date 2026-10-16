@@ -1,0 +1,97 @@
+# Single source of every setting and hyperparameter. Code reads these values; it never hard-codes them.
+# Values that come from PROJECT_SPEC.md are taken verbatim. Settings for later stages are added
+# when those stages are implemented, so nothing here is a guess.
+
+paths:                      # relative to the repository root
+  raw_dir: data/raw
+  cache_dir: data/cache
+  checkpoints_dir: checkpoints
+  reports_dir: reports
+  figures_dir: reports/figures
+
+dataset:
+  name: PTB-XL
+  version: "1.0.3"
+  base_url: https://physionet.org/files/ptb-xl/1.0.3/   # canonical location, cited in the README
+  checksum_manifest: SHA256SUMS.txt           # PhysioNet's per-file SHA-256 list for this version
+  # SHA-256 of physionet.org's own SHA256SUMS.txt for v1.0.3. It pins the exact file set and every
+  # file's hash, so files fetched from a mirror are still checked against PhysioNet's list.
+  checksum_manifest_sha256: b7224b92b341511ec3ceb13dc6652079b2c36a06504bcb49506f157f51dc695d
+  database_csv: ptbxl_database.csv            # one row per record: labels, strat_fold, patient_id
+  statements_csv: scp_statements.csv          # SCP code ontology (diagnostic_class lives here)
+  record_dirs: [records100]                   # 100 Hz only (spec section 2)
+  record_path_column: filename_lr             # ptbxl_database.csv column pointing at the 100 Hz record
+  sampling_rate_hz: 100
+  record_duration_s: 10
+  n_leads: 12
+  # PhysioNet's published figures for v1.0.3. Verification fails if the download disagrees.
+  expected_records: 21799
+  expected_patients: 18869
+
+download:
+  # PhysioNet's AWS Open Data mirror, listed on the PTB-XL page as s3://physionet-open/ptb-xl/1.0.3/.
+  # Measured from this laptop: physionet.org ~7 KB/s per connection, the mirror ~2.5 MB/s.
+  # Set this to dataset.base_url to download from physionet.org directly; both are verified the same way.
+  source_url: https://physionet-open.s3.amazonaws.com/ptb-xl/1.0.3/
+  workers: 32                 # concurrent HTTP connections; files are 24 kB so latency, not bandwidth, limits speed.
+                              # S3 is built for this; drop to 4 if source_url points at physionet.org.
+  timeout_s: 60               # per-request connect/read timeout
+  max_attempts: 5             # per file, before giving up on it
+  retry_backoff_s: 2.0        # wait = retry_backoff_s * 2**(attempt - 1)
+  chunk_size_bytes: 65536
+  lock_file: .download.lock   # in raw_dir; an OS-level lock stops two downloads writing the same files
+
+splits:                       # PTB-XL strat_fold, patient-stratified (spec section 2)
+  train_folds: [1, 2, 3, 4, 5, 6, 7, 8]
+  val_folds: [9]
+  test_folds: [10]
+
+labels:
+  superclasses: [NORM, MI, STTC, CD, HYP]
+
+preprocessing:
+  bandpass:
+    enabled: false            # spec: implement, measure with and without, keep only if it helps
+    low_hz: 0.5
+    high_hz: 40.0
+
+augmentation:                 # training split only
+  crop_window_s: 8
+  amplitude_scale: [0.8, 1.2]
+
+model:                        # 1D ResNet, spec section 3
+  stem_channels: 64
+  stem_kernel: 7
+  stem_stride: 2
+  stage_channels: [64, 128, 256, 512]
+  stage_strides: [1, 2, 2, 2]
+  blocks_per_stage: 2
+  block_kernel: 5
+  head_dropout: 0.3
+
+training:                     # spec section 3
+  batch_size: 64              # RTX 3050 Laptop has 4 GB VRAM; never above 64
+  optimizer: adamw
+  lr: 1.0e-3
+  weight_decay: 1.0e-2
+  max_epochs: 50
+  early_stopping_metric: val_macro_auroc
+  early_stopping_patience: 8
+  seed: 42
+
+evaluation:                   # spec section 4
+  reliability_bins: 10
+  high_sensitivity_target: 0.90
+
+sample_plot:                  # src/data/inspect_record.py
+  lead: II
+  output: reports/figures/sample_record.png
+  dpi: 150
+  figure_width_in: 14
+  # Standard ECG paper at 25 mm/s and 10 mm/mV: 1 mm = 0.04 s = 0.1 mV, 5 mm = 0.2 s = 0.5 mV.
+  paper_speed_mm_per_s: 25
+  gain_mm_per_mv: 10
+  grid_minor_s: 0.04
+  grid_major_s: 0.2
+  grid_minor_mv: 0.1
+  grid_major_mv: 0.5
