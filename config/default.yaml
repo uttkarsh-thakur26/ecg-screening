@@ -93,7 +93,12 @@ augmentation:                 # training split only; validation and test are nev
     # after normalisation is the lead's training mean.
     window_s: 8
   amplitude_scale:
-    enabled: true
+    # Off: kept the better of two same-seed runs on fold 9 (reports/runs/compare_20261017-215053_main_vs_
+    # 20261017-215633_no-amp-scale.json). Without scaling, HYP validation AUPRC 0.671 vs 0.652 (+0.020, paired
+    # patient bootstrap 95% interval +0.000 to +0.040) and macro AUROC 0.929 vs 0.927 (interval includes 0).
+    # One seed only: the interval does not cover training noise. Plausible reason: hypertrophy criteria are
+    # voltage thresholds, and a random x0.8-1.2 factor blurs the absolute amplitude the model needs.
+    enabled: false
     range: [0.8, 1.2]         # one factor per record, shared by all 12 leads; must stay > 0 (no sign inversion)
   gaussian_noise:
     enabled: true

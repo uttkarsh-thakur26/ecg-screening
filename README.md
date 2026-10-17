@@ -80,10 +80,13 @@ pytest
   its own folder (`data/cache/bandpass_0.5-40hz_order2/`) with its own `norm_stats.json`, so both can be compared.
 - **Dataset** (`src/data/dataset.py`). Serves the 21,388 labelled records of one split as a float32 (12, 1000) signal,
   z-scored per lead with the training statistics, and a float32 (5,) target for `BCEWithLogitsLoss`.
-- **Augmentation** (`src/data/augment.py`, training split only, each behind its own flag): one amplitude factor in
-  0.8–1.2 for all 12 leads, Gaussian noise with σ = 0.05 lead standard deviations, and a time shift of up to ±2 s with
-  the gap set to zero (at least 8 s of real signal remain). No time reversal and no sign inversion: both change what
-  the ECG means clinically, so the label would no longer be true.
+- **Augmentation** (`src/data/augment.py`, training split only, each behind its own flag): Gaussian noise with
+  σ = 0.05 lead standard deviations, and a time shift of up to ±2 s with the gap set to zero (at least 8 s of real
+  signal remain). Amplitude scaling (one factor in 0.8–1.2 for all 12 leads) is implemented but switched off, because
+  it lowered HYP validation AUPRC (see [Training](#training-validation-only)). No time reversal and no sign inversion:
+  both change what the ECG means clinically, so the label would no longer be true. Every transform draws its random
+  numbers whether or not it is enabled, so a run with one transform off and the same seed sees the same noise and
+  shifts as the full run.
 - **Test-set lock.** `ECGDataset(cfg, "test")`, `make_loader(cfg, "test")` and `Cache.rows("test")` raise
   `TestSetLockedError` unless `allow_test=True` (the bool, not a truthy string) is passed. Only the one-time final
   evaluation and the demo API may pass it. A test fails if any module outside `src/data/` mentions `allow_test`,
@@ -129,5 +132,71 @@ is never opened.
 | HYP | 268 | 0.125 | 0.500 | 0.125 | 0.886 | 0.628 |
 | **Macro** | | 0.260 | 0.500 | 0.260 | **0.856** | **0.693** |
 
-AUPRC must be read against prevalence, which is what a model with no skill scores: HYP's 0.629 is five times its
-prevalence, NORM's 0.852 under twice.
+AUPRC must be read against prevalence, which is what a model with no skill scores: HYP's 0.628 is five times its
+prevalence, NORM's 0.856 under twice.
+
+## Training (validation only)
+
+```powershell
+python -m pytest tests/test_cuda.py               # the GPU is visible (Armoury Crate GPU Mode: Standard)
+python -m src.models.resnet1d                     # layer shapes and the parameter count
+python -m src.training.train --overfit            # sanity check, about 30 s
+python -m src.training.train --name main          # full run, about 5 min on the RTX 3050 Laptop
+python -m src.training.compare_runs <run A> <run B>   # paired comparison of two runs on the validation split
+```
+
+- **Model** (`src/models/resnet1d.py`). The spec's 1D ResNet: stem Conv1d(12→64, k=7, stride 2) → BN → ReLU →
+  MaxPool(3, stride 2); four stages of two residual blocks (64, 128, 256, 512 channels; strides 1, 2, 2, 2); each block
+  Conv(k=5) → BN → ReLU → Dropout(0.2) → Conv(k=5) → BN, plus the identity or a 1×1 convolution when the shape changes,
+  then ReLU; global average pooling over time → Dropout(0.3) → Linear(512→5). **6,290,821 parameters.** The spec leaves
+  two sizes open: the max pool uses ResNet's 3/2 and the in-block dropout Ribeiro et al.'s (2020) 0.2.
+- **Loss and optimiser** (`src/training/train.py`). `BCEWithLogitsLoss` with `pos_weight` = negatives / positives per
+  class in the training split (NORM 1.25, MI 2.90, STTC 3.08, CD 3.37, HYP 7.06); AdamW (lr 1e-3, weight decay 1e-2);
+  linear warmup over 2 epochs, then cosine decay over the 50-epoch budget, updated every step; batch 64 (no
+  out-of-memory on the 4 GB GPU).
+- **Model selection.** Validation macro AUROC after every epoch; only the best epoch's weights are kept
+  (`checkpoints/<run_id>/best.pt`, gitignored); training stops after 8 epochs without a new best.
+- **Records.** Every run writes `reports/runs/<run_id>.csv` (per epoch: learning rate, train and validation loss,
+  validation macro and per-class AUROC and AUPRC, with the run id, git commit and seed on every row) and
+  `reports/runs/<run_id>.json` (effective config, overrides, commit, seed, pos_weight, environment, best epoch).
+- **Reproducibility.** One seed drives the weights, shuffling, augmentation and dropout, and cuDNN and cuBLAS run in
+  deterministic mode, so the same commit, config and seed give the same weights.
+- **Overfit check.** 50 training records, augmentation off, 300 steps: training loss 1.008 → 0.00004 (eval mode),
+  all 250 labels right. The loop can fit data, so a poor full run would point at the data or the model, not the loop.
+
+**Results** (fold 9, best epoch of each run; the test fold has not been opened):
+
+| Class | Prevalence | Prior AUPRC | Features AUROC | Features AUPRC | ResNet1d AUROC | ResNet1d AUPRC |
+|---|---:|---:|---:|---:|---:|---:|
+| NORM | 0.445 | 0.445 | 0.889 | 0.856 | 0.947 | 0.931 |
+| MI | 0.252 | 0.252 | 0.828 | 0.637 | 0.930 | 0.843 |
+| STTC | 0.246 | 0.246 | 0.828 | 0.602 | 0.930 | 0.789 |
+| CD | 0.231 | 0.231 | 0.850 | 0.742 | 0.928 | 0.847 |
+| HYP | 0.125 | 0.125 | 0.886 | 0.628 | 0.909 | 0.671 |
+| **Macro** | 0.260 | 0.260 | 0.856 | 0.693 | **0.929** | **0.816** |
+
+ResNet1d is the run with the committed config (`20261017-215633_no-amp-scale`: best epoch 19 of 27, early-stopped).
+The prior baseline's AUROC is 0.5 for every class. For reference, Strodthoff et al. (2021) report about 0.93 macro
+AUROC for the best CNNs on this task, but on fold 10 (test), so the two numbers are not directly comparable.
+The CNN beats the feature baseline in every class. Its smallest gain is in HYP (AUROC +0.02, AUPRC +0.04), the
+feature baseline's best class, plausibly because per-lead amplitude statistics already capture much of the voltage
+signal of hypertrophy.
+
+**Amplitude-scaling ablation.** Two runs from the same commit and seed that differ only in
+`augmentation.amplitude_scale.enabled` (confirmed by `compare_runs`, which also reloads each best checkpoint and checks
+it reproduces its logged metrics). Intervals: paired bootstrap over the 1,917 validation patients, 2,000 resamples.
+
+| Metric (fold 9) | Scaling on | Scaling off | Off − on | 95% interval |
+|---|---:|---:|---:|---:|
+| HYP AUPRC | 0.652 | 0.671 | +0.020 | +0.000 to +0.040 |
+| HYP AUROC | 0.902 | 0.909 | +0.007 | −0.001 to +0.015 |
+| Macro AUPRC | 0.812 | 0.816 | +0.005 | −0.001 to +0.010 |
+| Macro AUROC | 0.927 | 0.929 | +0.002 | −0.001 to +0.004 |
+
+Scaling off gives the higher HYP AUPRC, so it is off in the config. The evidence is weak: the interval's lower end is
+zero, it covers only which patients are in fold 9 and not training noise (one seed per arm), and the setting was chosen
+on fold 9, so fold-9 numbers are now slightly optimistic. The direction fits the clinical picture (hypertrophy
+criteria such as Sokolow–Lyon are voltage thresholds, and a random ×0.8–1.2 factor blurs absolute voltage), and MI and
+NORM AUPRC rose too, while CD fell slightly (−0.007, interval includes zero). Only repeating both arms with other
+seeds would show whether the gap is larger than seed-to-seed variation; the three-seed runs of the final model will at
+least measure that variation for the chosen setting.
