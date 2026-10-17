@@ -93,10 +93,12 @@ augmentation:                 # training split only; validation and test are nev
     # after normalisation is the lead's training mean.
     window_s: 8
   amplitude_scale:
-    # Off: higher HYP validation AUPRC in same-seed pairs on fold 9 for seeds 42, 43 and 44
-    # (reports/runs/summary_amplitude_scale_seeds.json): off - on = +0.0114 +/- 0.0079
-    # (mean +/- std over seeds), positive in 3 of 3. Cost: CD AUPRC -0.0057 +/- 0.0041, lower in 3 of 3;
-    # macro AUROC +0.0009. Plausible reason: hypertrophy criteria are voltage thresholds, and a random
+    # Decision rule, fixed before applying it: keep scaling off unless scaling on has the higher mean HYP
+    # validation AUPRC over seeds 42, 43 and 44 (fold 9; reports/runs/summary_amplitude_scale_seeds.json).
+    # Mean +/- sample std over the 3 seeds:  HYP AUPRC   on 0.6574 +/- 0.0051, off 0.6688 +/- 0.0030
+    #                                        macro AUROC on 0.9270 +/- 0.0003, off 0.9279 +/- 0.0009
+    # On is not higher, so scaling stays off. Cost: CD AUPRC is lower without scaling in 3 of 3 seeds
+    # (-0.0057 +/- 0.0041). Plausible reason for HYP: hypertrophy criteria are voltage thresholds, and a random
     # x0.8-1.2 factor blurs the absolute amplitude they depend on.
     enabled: false
     range: [0.8, 1.2]         # one factor per record, shared by all 12 leads; must stay > 0 (no sign inversion)

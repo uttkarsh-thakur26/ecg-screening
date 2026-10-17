@@ -198,9 +198,12 @@ checks they reproduce their logged metrics; `summarize_comparisons` then checks 
 | Macro AUPRC | 0.8121 ± 0.0006 | 0.8148 ± 0.0027 | +0.0047 / −0.0004 / +0.0037 | +0.0027 ± 0.0027 | 2 of 3 |
 | Macro AUROC | 0.9270 ± 0.0003 | 0.9279 ± 0.0009 | +0.0016 / +0.0002 / +0.0008 | +0.0009 ± 0.0007 | 3 of 3 |
 
+**Decision rule**, fixed before it was applied: keep scaling off unless scaling on has the higher mean HYP AUPRC over
+the three seeds. Mean ± sample std: HYP AUPRC on 0.6574 ± 0.0051, off 0.6688 ± 0.0030; macro AUROC on 0.9270 ± 0.0003,
+off 0.9279 ± 0.0009. Scaling on is not higher, so scaling stays off in the config.
+
 Scaling off raises HYP AUPRC in all three seeds (by +0.011 on average), a gap larger than the
-seed-to-seed spread of either setting (std 0.003–0.005), so it stays off in the config. The
-evidence is still modest. Only seed 42's patient-bootstrap interval excludes zero (seed 43: −0.0128 to
+seed-to-seed spread of either setting (std 0.003–0.005). The evidence is still modest. Only seed 42's patient-bootstrap interval excludes zero (seed 43: −0.0128 to
 +0.0196; seed 44: −0.0062 to +0.0290), and three seeds out of three pointing the same
 way would happen by chance one time in four if there were no effect (two-sided sign test). The setting was also chosen
 on fold 9, so fold-9 numbers are slightly optimistic; fold 10 has not been used.
