@@ -92,3 +92,42 @@ pytest
   processes, 1.7 s with 2 and 1.0 s with 4, after about 7 s to start the workers once. Each Windows worker
   re-imports CUDA PyTorch and commits about 1.8 GB of memory, so the config uses 2 workers for training and none for
   validation and test.
+
+## Baselines (validation only)
+
+```powershell
+python -m src.models.baselines     # about 40 s; writes reports/baselines_val.json
+python -m src.models.rpeak_check   # about 1 min; how the beat detector was chosen, on training records only
+```
+
+Both baselines are fit on the training split and scored on the validation split (fold 9). No setting is tuned against
+labels or the validation split: the gradient boosting uses scikit-learn's defaults, and the beat detector was chosen on
+training records with a label-free check. Every setting is in `config/default.yaml` under `baselines`. The test split
+is never opened.
+
+- **Prior baseline.** Every record gets each class's training-split frequency. One score for every record cannot rank
+  anything, so its AUROC is exactly 0.5 and its AUPRC is exactly the class's validation prevalence: the floor.
+- **Feature baseline.** 79 features per record, then one `HistGradientBoostingClassifier` per class (scikit-learn
+  defaults, early stopping off because it would hold out random training records rather than patients):
+  number of beats, heart rate and RR-interval mean, SD, min, max and RMSSD from lead II, plus mean, SD, min, max,
+  skewness and kurtosis of each of the 12 leads (in mV).
+- **Beat detector.** Pan–Tompkins style (5–15 Hz band-pass, derivative, squaring, 150 ms integration, T-wave slope rule,
+  search-back, 0.2 s refractory period), with the threshold set from the median of the highest third of candidate peaks,
+  so that large ventricular ectopic beats do not hide the normal ones. PTB-XL has no beat annotations, so detectors are
+  compared by consistency: a heart beats once whatever the lead, so the lead II count should match an independent
+  detection on leads I and V5. On 3,000 training records (`python -m src.models.rpeak_check`) it agrees within one beat
+  in 96.2% of records, against 92.9% with the threshold taken from the record's maximum, 83.4% for wfdb's GQRS (misses
+  beats) and 56.6% for wfdb's XQRS (marks P and T waves at 100 Hz). It still over-counts on very noisy traces. Tests pin
+  its counts on training records counted by eye, including ones where the T-wave rule and the search-back each matter.
+
+| Class | Val positives | Prevalence | Prior AUROC | Prior AUPRC | Features AUROC | Features AUPRC |
+|---|---:|---:|---:|---:|---:|---:|
+| NORM | 955 | 0.445 | 0.500 | 0.445 | 0.889 | 0.856 |
+| MI | 540 | 0.252 | 0.500 | 0.252 | 0.828 | 0.637 |
+| STTC | 528 | 0.246 | 0.500 | 0.246 | 0.828 | 0.602 |
+| CD | 495 | 0.231 | 0.500 | 0.231 | 0.850 | 0.742 |
+| HYP | 268 | 0.125 | 0.500 | 0.125 | 0.886 | 0.628 |
+| **Macro** | | 0.260 | 0.500 | 0.260 | **0.856** | **0.693** |
+
+AUPRC must be read against prevalence, which is what a model with no skill scores: HYP's 0.629 is five times its
+prevalence, NORM's 0.852 under twice.
