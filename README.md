@@ -225,31 +225,39 @@ bit for bit.
 ## Evaluation (validation only)
 
 ```powershell
-python -m src.evaluation.evaluate_val     # about 20 s; thresholds, metrics and figures for evaluation.model_run
+python -m src.training.calibrate          # about 25 s; calibration, then thresholds, metrics and all validation figures
+python -m src.evaluation.evaluate_val     # the second half alone, reusing the saved reports/calibration.json
 ```
 
-`evaluate_val` reloads the best checkpoint of the committed-config run (`20261017-215633_no-amp-scale`, seed 42),
-predicts fold 9 with deterministic GPU kernels and checks that the predictions reproduce the validation metrics the run
-logged. It then chooses per-class thresholds on those predictions and writes `reports/thresholds.json`,
-`reports/metrics_val.json` and the figures in `reports/figures/`. Fold 10 is not opened.
+Both reload the best checkpoint of the committed-config run (`20261017-215633_no-amp-scale`, seed 42), predict fold 9
+with deterministic GPU kernels and check that the predictions reproduce the validation metrics the run logged.
+`calibrate` fits the per-class calibrators (next section) and writes `reports/calibration.json` and
+`reports/figures/reliability_val.png`. Then, in the same process and on the same predictions, the evaluation calibrates
+the probabilities, chooses per-class thresholds on them and writes `reports/thresholds.json`,
+`reports/metrics_val.json` and the other figures in `reports/figures/`. Fold 10 is not opened.
 
 - **Max-F1 operating point.** Per class, the threshold with the highest validation F1 (exact ties go to the lower
   threshold, which keeps the same F1 with more sensitivity).
 - **High-sensitivity operating point.** Per abnormal class (MI, STTC, CD, HYP), the highest threshold whose validation
   sensitivity is at least 0.90: the most specificity that still catches 9 in 10 cases. NORM gets none, because it is
   not an abnormality to be caught.
-- A record is flagged when its probability is at least the threshold. Candidate thresholds are the distinct validation
-  probabilities. The probabilities are uncalibrated sigmoid outputs, so the thresholds must be re-derived after
-  temperature scaling.
+- A record is flagged when its calibrated probability is at least the threshold. Candidate thresholds are the distinct
+  calibrated validation probabilities.
 
 | Class | AUROC | AUPRC | Max-F1: threshold | Sens | Spec | Prec | F1 | Sens ≥ 0.90: threshold | Sens | Spec | Prec | F1 |
 |---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| NORM | 0.947 | 0.931 | 0.378 | 0.919 | 0.845 | 0.826 | 0.870 | – | – | – | – | – |
-| MI | 0.930 | 0.843 | 0.645 | 0.793 | 0.903 | 0.734 | 0.762 | 0.302 | 0.900 | 0.801 | 0.604 | 0.723 |
-| STTC | 0.930 | 0.789 | 0.709 | 0.807 | 0.897 | 0.718 | 0.760 | 0.468 | 0.902 | 0.807 | 0.604 | 0.723 |
-| CD | 0.928 | 0.847 | 0.754 | 0.786 | 0.924 | 0.755 | 0.770 | 0.328 | 0.901 | 0.780 | 0.551 | 0.684 |
-| HYP | 0.909 | 0.671 | 0.850 | 0.578 | 0.959 | 0.668 | 0.620 | 0.154 | 0.903 | 0.721 | 0.316 | 0.468 |
+| NORM | 0.947 | 0.931 | 0.415 | 0.919 | 0.845 | 0.826 | 0.870 | – | – | – | – | – |
+| MI | 0.930 | 0.843 | 0.367 | 0.793 | 0.903 | 0.734 | 0.762 | 0.181 | 0.900 | 0.801 | 0.604 | 0.723 |
+| STTC | 0.930 | 0.789 | 0.373 | 0.807 | 0.897 | 0.718 | 0.760 | 0.219 | 0.902 | 0.807 | 0.604 | 0.723 |
+| CD | 0.928 | 0.847 | 0.357 | 0.786 | 0.924 | 0.755 | 0.770 | 0.132 | 0.901 | 0.780 | 0.551 | 0.684 |
+| HYP | 0.909 | 0.671 | 0.396 | 0.578 | 0.959 | 0.668 | 0.620 | 0.073 | 0.903 | 0.721 | 0.316 | 0.468 |
 | **Macro, abnormal** | 0.924 | 0.787 | | 0.741 | 0.921 | 0.719 | 0.728 | | 0.901 | 0.777 | 0.519 | 0.650 |
+
+The thresholds are on calibrated probabilities. Before calibration the same rules gave max-F1 thresholds 0.378, 0.645,
+0.709, 0.754 and 0.850 and high-sensitivity thresholds 0.302, 0.468, 0.328 and 0.154. Those flag exactly the same
+validation records (checked), so every count and metric above is unchanged: calibration moves the threshold values,
+not the decisions on these records. Thresholds and calibration only make sense together. `thresholds.json` names the
+calibration file and its SHA-256, and must never be applied to uncalibrated probabilities.
 
 The thresholds were chosen on the same records they are scored on, so the thresholded numbers are optimistic; the
 unbiased estimate is the one-time fold-10 evaluation with these thresholds frozen. The F1-optimal HYP threshold misses
@@ -260,4 +268,66 @@ accurate.
 Training curves (`reports/figures/training_curves.png`): validation loss is lowest at epoch 10 (0.547) and back at 0.548
 at the saved epoch 19. After epoch 19 it climbs to 0.58–0.87 while training loss keeps falling and validation macro AUROC
 slips only from 0.929 to 0.922. The model grows more confident without ranking better, the usual first sign of
-overfitting; whether the saved epoch's probabilities are calibrated is measured next (reliability diagrams, ECE).
+overfitting. The next section measures how well the saved epoch's probabilities are calibrated (reliability diagrams,
+ECE).
+
+### Calibration (validation only)
+
+A probability is calibrated when it means what it says: of the records given about 0.8 for a class, about 80% have it.
+The raw outputs are not, for two reasons:
+
+- **pos_weight.** Training weighted each positive label of class c by pos_weight = negatives / positives (HYP 7.06,
+  NORM 1.25). For a record whose true chance is q, the loss is then lowest at logit(q) + log(pos_weight), not
+  logit(q). So every logit is shifted up, the rare classes most, and the raw probabilities overstate every finding.
+- **Overconfidence.** The saved epoch is part-way into overfitting (above), so the logits are too large.
+
+`src/training/calibrate.py` fits two calibrators per class to the validation logits z. Each minimises the mean binary
+cross-entropy **without** pos_weight (L-BFGS, starting from the identity):
+
+- **Temperature scaling:** p = sigmoid(z / T). It fixes overconfidence, but z = 0 always stays at p = 0.5, so it
+  cannot undo a shift.
+- **Platt scaling (temperature plus bias):** p = sigmoid(a·z + b). The bias b can undo the pos_weight shift. If that
+  shift were the only distortion, the fit would give a = 1 and b = −log(pos_weight).
+
+Per class, the calibrator with the lower validation ECE is kept. ECE uses 10 equal-width bins: the average gap between
+predicted probability and observed frequency, weighted by the records in each bin.
+
+| Class | pos_weight | ECE uncalibrated | Temperature: T | ECE | Platt: a | b | −log(pos_weight) | ECE | Chosen |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|---|
+| NORM | 1.25 | 0.040 | 1.460 | **0.018** | 0.686 | −0.070 | −0.222 | 0.019 | Temperature |
+| MI | 2.90 | 0.078 | 1.472 | 0.089 | 0.672 | −0.944 | −1.065 | **0.017** | Platt |
+| STTC | 3.08 | 0.110 | 1.507 | 0.117 | 0.739 | −1.178 | −1.125 | **0.021** | Platt |
+| CD | 3.37 | 0.110 | 1.385 | 0.128 | 0.706 | −1.378 | −1.216 | **0.014** | Platt |
+| HYP | 7.06 | 0.109 | 1.504 | 0.124 | 0.618 | −1.492 | −1.955 | **0.012** | Platt |
+| **Macro** | | 0.089 | | 0.096 | | | | 0.016 | 0.016 (chosen) |
+
+- **Temperature scaling alone gives the four abnormal classes a worse ECE** than no calibration. It still lowers
+  their cross-entropy, the quantity it is fitted to (MI 0.343 → 0.323, HYP 0.333 → 0.311). It also makes the top
+  bin more honest (HYP above 0.9: predicted 0.96, observed 0.71 → 0.84). But every bin of these classes
+  over-predicts, so their ECE is almost exactly the average over-prediction (mean probability − prevalence: MI
+  0.089, CD 0.128 under temperature scaling). Squeezing every logit towards 0 (T ≈ 1.4–1.5) lifts the many
+  low-scoring records towards 0.5 and raises that average (MI from 0.076 to 0.089). A pure rescaling cannot remove
+  an offset. Temperature scaling helps only NORM, whose pos_weight is close to 1.
+- **The bias fixes it.** Platt's fitted b is negative for every class, and its size grows with pos_weight
+  (NORM −0.07, MI −0.94, STTC −1.18, CD −1.38, HYP −1.49). That is the direction the pos_weight argument predicts,
+  but b is not equal to −log(pos_weight): equality needs a = 1. The slope a ≈ 0.6–0.7 shows the logits are also
+  overconfident, and the two distortions are fitted together.
+- **NORM keeps temperature scaling.** Its two ECEs differ by 0.0002, far below their noise; Platt's b there is small
+  (−0.07).
+- **AUROC and AUPRC are unchanged** for every class: both calibrators are strictly increasing, so no two records swap
+  order. This is checked to 1e-12 in the script and in `tests/test_calibration.py`, including a test that re-predicts
+  fold 9 from the checkpoint.
+
+`reports/figures/reliability_val.png` draws, per class, observed frequency against mean predicted probability for each
+bin, before and after calibration, with the number of records per bin underneath (log scale). Uncalibrated, the
+abnormal classes sit far below the diagonal: of HYP records the model put above 0.9, 71% had HYP. After calibration
+every class follows the diagonal to within the noise of the sparser middle bins.
+
+**These ECEs are optimistic.** The calibrators were fitted, chosen and scored on the same fold-9 records. Platt has two
+parameters and contains temperature scaling, so on its own fitting data its cross-entropy cannot be worse. The honest
+ECE comes from fold 10, scored once in the final evaluation with these calibrators frozen.
+
+ECE also never reaches 0 on finite data. Each bin's observed frequency is a proportion over tens to hundreds of
+records, with a standard error of several percentage points in the sparse middle bins, so even a perfectly calibrated
+model scores above zero. The fold-10 ECE should therefore be read against the uncalibrated values, not against 0, and
+differences of a few thousandths (NORM: 0.0183 vs 0.0185) are noise.

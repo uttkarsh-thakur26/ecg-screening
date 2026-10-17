@@ -1,7 +1,8 @@
 """Metrics for the five-superclass multi-label task (PROJECT_SPEC.md section 4).
 
-Ranking metrics (no threshold) and metrics at an operating point (one threshold per class, chosen on
-the validation split by src/evaluation/thresholds.py). Calibration and reports/metrics.json come later.
+Ranking metrics (no threshold), metrics at an operating point (one threshold per class, chosen on the
+validation split by src/evaluation/thresholds.py) and calibration metrics (reliability bins, ECE).
+reports/metrics.json comes with the final evaluation.
 
 Each class is scored as its own binary problem, because the task is multi-label: a record can be
 positive for several classes, so there is no single "predicted class" to compare.
@@ -21,6 +22,17 @@ At an operating point a record is flagged for a class when its probability is >=
 - F1 = 2TP / (2TP + FP + FN), the harmonic mean of precision and sensitivity (0 when TP = 0).
 Accuracy is not reported: with NORM in 45% of records and HYP in 12%, a model that never flags HYP is
 88% accurate on it and useless.
+
+Calibration asks whether a predicted probability means what it says: of the records given about 0.8 for
+a class, about 80% should have it. Per class, the probabilities are split into equal-width bins
+[0, 0.1), [0.1, 0.2), ..., [0.9, 1.0] (the last bin also holds 1.0):
+- reliability bins: per bin, the record count, the mean predicted probability and the observed frequency
+  (share of those records that have the class). A calibrated model has the two equal in every bin.
+- ECE (expected calibration error) = sum over bins of (records in bin / all records) x |observed frequency
+  - mean predicted probability|: the average gap between what the model says and what happens, weighted
+  by how many records the model says it about. 0 is perfect; empty bins contribute nothing.
+This is the per-class (one-vs-rest) form, the one that fits sigmoid outputs; the "top-label" ECE of
+multi-class models scores only the highest probability per record and does not apply to a multi-label task.
 
 Macro values are the unweighted mean over classes, so the rare HYP counts as much as the common NORM.
 A macro value is None when the metric is undefined for any class it averages.
@@ -146,3 +158,46 @@ def operating_point_metrics(y_true: np.ndarray, y_prob: np.ndarray, classes: Seq
         fn, tn = int((~flagged & t).sum()), int((~flagged & ~t).sum())
         per_class[c] = {"threshold": threshold, "tp": tp, "fp": fp, "fn": fn, "tn": tn} | counts_to_metrics(tp, fp, fn, tn)
     return {"classes": scored, "per_class": per_class, "macro": macro_mean(per_class, scored)}
+
+
+def _binary_scores(t: np.ndarray, p: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+    """One class's 0/1 labels and probabilities, checked. Unlike ranking metrics, calibration needs no negatives."""
+    t, p = np.asarray(t), np.asarray(p, dtype=np.float64)
+    if t.ndim != 1 or p.ndim != 1 or t.shape != p.shape:
+        raise ValueError(f"t and p must be 1-D (records,) of equal length, got {t.shape} and {p.shape}")
+    if len(t) == 0:
+        raise ValueError("No records to evaluate")
+    if not np.isin(t, (0, 1)).all():
+        raise ValueError(f"t must contain only 0 and 1, got values {np.unique(t)[:10].tolist()}")
+    if not np.isfinite(p).all() or p.min() < 0 or p.max() > 1:
+        raise ValueError("p must be finite probabilities in [0, 1]; apply the sigmoid to logits first")
+    return t.astype(np.int64), p
+
+
+def reliability_bins(t: np.ndarray, p: np.ndarray, n_bins: int) -> dict[str, list]:
+    """Equal-width reliability bins of one class: bin b holds b/n_bins <= p < (b+1)/n_bins, the last bin also 1.0.
+
+    Returns {"edges": n_bins + 1 floats, "count": records per bin, "mean_predicted": mean p per bin,
+    "observed_frequency": share of the bin's records with the class}; the last two are None for an empty bin.
+    """
+    if isinstance(n_bins, bool) or not isinstance(n_bins, int) or n_bins < 1:
+        raise ValueError(f"n_bins must be a positive integer, got {n_bins!r}")
+    t, p = _binary_scores(t, p)
+    index = np.minimum((p * n_bins).astype(np.int64), n_bins - 1)
+    count = np.bincount(index, minlength=n_bins)
+    p_sum = np.bincount(index, weights=p, minlength=n_bins)
+    t_sum = np.bincount(index, weights=t, minlength=n_bins)
+    return {
+        "edges": np.linspace(0, 1, n_bins + 1).tolist(),
+        "count": count.tolist(),
+        "mean_predicted": [float(s / n) if n else None for s, n in zip(p_sum, count)],
+        "observed_frequency": [float(s / n) if n else None for s, n in zip(t_sum, count)],
+    }
+
+
+def expected_calibration_error(t: np.ndarray, p: np.ndarray, n_bins: int) -> float:
+    """ECE of one class: sum over bins of (bin records / records) x |observed frequency - mean predicted|."""
+    bins = reliability_bins(t, p, n_bins)
+    total = sum(bins["count"])
+    return float(sum(n / total * abs(f - m) for n, f, m in
+                     zip(bins["count"], bins["observed_frequency"], bins["mean_predicted"]) if n))

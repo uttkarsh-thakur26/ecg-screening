@@ -184,6 +184,25 @@ evaluation:                   # spec section 4; src/evaluation/evaluate_val.py u
     dpi: 150
     panel_size_in: 3.2        # width and height of one per-class panel, in inches
 
+calibration:                  # src/training/calibrate.py; fitted and chosen on the validation split (fold 9) only
+  file: calibration.json      # in paths.reports_dir; evaluate_val applies it before choosing thresholds
+  figure: reliability_val.png # in evaluation.figures' folder (paths.figures_dir)
+  # Per class, two calibrators fitted to the validation logits by minimising the mean binary cross-entropy
+  # WITHOUT pos_weight: temperature, sigmoid(z / T), and Platt scaling, sigmoid(a z + b). The one with the lower
+  # validation ECE (evaluation.reliability_bins equal-width bins) is kept; on an exact tie, temperature (fewer parameters).
+  lbfgs:                      # torch.optim.LBFGS with the strong Wolfe line search, started at the identity (T = 1; a = 1, b = 0)
+    lr: 1.0                   # first trial step of each line search; 1 is the natural step for a quasi-Newton method
+    max_iter: 100             # 1 or 2 parameters on about 2,000 records: converges in well under 20 iterations
+    history_size: 10
+    tolerance_grad: 1.0e-10   # stop when every gradient component is below this
+    tolerance_change: 1.0e-14 # or when the loss or the step changes by less than this
+  # A fit counts as converged only if every gradient component of the mean BCE is below this at the solution;
+  # otherwise calibrate.py stops with an error instead of saving an unconverged calibrator.
+  max_final_gradient: 1.0e-7
+  # Both calibrators are strictly increasing, so per-class AUROC and AUPRC may differ from the uncalibrated values
+  # by floating-point rounding only.
+  ranking_tolerance: 1.0e-12
+
 baselines:                    # spec section 3, src/models/baselines.py; fit on the training split, scored on validation only
   report_file: baselines_val.json   # in paths.reports_dir
   workers: 8                  # processes extracting features in parallel

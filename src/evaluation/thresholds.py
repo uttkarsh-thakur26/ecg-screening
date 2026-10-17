@@ -22,8 +22,10 @@ chosen score is the top of that gap, which for high_sensitivity is by definition
 Ties. When several thresholds share the maximum F1 exactly (compared as integer fractions, not floats), the
 lowest one is chosen: equal F1 and more sensitivity, which is the side a screening tool should err on.
 
-Thresholds apply to the probabilities they were chosen on (the model's sigmoid outputs). Temperature scaling
-changes the probabilities, so thresholds must be re-derived or mapped after calibration.
+Thresholds apply to the probabilities they were chosen on. evaluate_val chooses them on the calibrated
+probabilities (reports/calibration.json), so they must be applied after the same calibration, never to the raw
+sigmoid outputs. Calibration is strictly increasing, so on the validation records the calibrated thresholds
+flag exactly what the uncalibrated ones would; only the numbers differ.
 """
 
 from __future__ import annotations

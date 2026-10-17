@@ -11,7 +11,7 @@ import numpy as np
 import pytest
 
 from src.evaluation import plots
-from src.evaluation.metrics import operating_point_metrics, ranking_metrics
+from src.evaluation.metrics import operating_point_metrics, ranking_metrics, reliability_bins
 from src.evaluation.thresholds import select_thresholds
 
 CLASSES = ["NORM", "MI", "HYP"]
@@ -103,3 +103,23 @@ def test_class_distribution(tmp_path, predictions):
     with pytest.raises(ValueError, match="0/1 matrix"):
         plots.plot_class_distribution({"Train": y[:, :2]}, CLASSES, DESCRIPTIONS, tmp_path / "d.png", title="S",
                                       subtitle=None, **STYLE)
+
+
+def test_reliability_diagrams(tmp_path, predictions):
+    y, p = predictions
+    before = {c: reliability_bins(y[:, j], p[:, j], 10) for j, c in enumerate(CLASSES)}
+    after = {c: reliability_bins(y[:, j], np.sqrt(p[:, j]), 10) for j, c in enumerate(CLASSES)}
+    out = plots.plot_reliability_diagrams(before, after, ("Before", "After"), CLASSES, DESCRIPTIONS,
+                                          {c: f"ECE {c}" for c in CLASSES}, tmp_path / "rel.png", title="R",
+                                          subtitle="test", **STYLE)
+    assert _is_png(out)
+    with pytest.raises(ValueError, match="no reliability bins for HYP"):
+        plots.plot_reliability_diagrams(before, {c: after[c] for c in CLASSES[:2]}, ("B", "A"), CLASSES,
+                                        DESCRIPTIONS, {c: "" for c in CLASSES}, tmp_path / "x.png", title="R",
+                                        subtitle=None, **STYLE)
+    with pytest.raises(ValueError, match="different bin edges"):
+        coarse = {c: reliability_bins(y[:, j], p[:, j], 5) | {"edges": list(np.linspace(0, 1, 6) ** 2)}
+                  for j, c in enumerate(CLASSES)}
+        plots.plot_reliability_diagrams(coarse, {c: reliability_bins(y[:, j], p[:, j], 5) for j, c in enumerate(CLASSES)},
+                                        ("B", "A"), CLASSES, DESCRIPTIONS, {c: "" for c in CLASSES}, tmp_path / "y.png",
+                                        title="R", subtitle=None, **STYLE)

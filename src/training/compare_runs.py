@@ -53,11 +53,18 @@ def load_run(runs_dir: Path, run_id: str) -> dict[str, Any]:
 
 def validation_probabilities(run: dict[str, Any], device: torch.device,
                              tolerance: float) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
-    """(probabilities, targets, ecg_ids, patient_ids) of the run's best checkpoint on the validation split.
+    """(uncalibrated sigmoid probabilities, targets, ecg_ids, patient_ids); see validation_logits."""
+    logits, targets, ecg_ids, patient_ids = validation_logits(run, device, tolerance)
+    return probabilities(logits), targets, ecg_ids, patient_ids
+
+
+def validation_logits(run: dict[str, Any], device: torch.device,
+                      tolerance: float) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+    """(logits, targets, ecg_ids, patient_ids) of the run's best checkpoint on the validation split.
 
     The validation loader is built from the config stored in the checkpoint, so the preprocessing and the
     normalisation statistics are the ones the run used. The signal cache must be the one the run read, and
-    the recomputed metrics must match the ones logged for the checkpoint's epoch.
+    the metrics recomputed from the logits must match the ones logged for the checkpoint's epoch.
     """
     model, ckpt = load_checkpoint(project_path(run["checkpoint"]), device)
     if ckpt["run_id"] != run["run_id"]:
@@ -73,15 +80,14 @@ def validation_probabilities(run: dict[str, Any], device: torch.device,
         raise ValueError(f"Validation classes {list(ds.classes)} differ from the checkpoint's {ckpt['classes']}")
     pos_weight = torch.tensor([ckpt["pos_weight"][c] for c in ckpt["classes"]], device=device)
     logits, targets, _ = predict(model, loader, nn.BCEWithLogitsLoss(pos_weight=pos_weight), device)
-    probs = probabilities(logits)
-    recomputed = ranking_metrics(targets, probs, ckpt["classes"])
+    recomputed = ranking_metrics(targets, probabilities(logits), ckpt["classes"])
     logged = run["best"]
     for m in METRICS:
         gap = abs(recomputed["macro"][m] - logged["macro"][m])
         if gap > tolerance:
             raise ValueError(f"Run {run['run_id']}: best.pt gives validation macro {m} {recomputed['macro'][m]:.6f}, "
                              f"the run logged {logged['macro'][m]:.6f} at epoch {logged['epoch']} (difference {gap:.2e})")
-    return probs, targets, ds.ecg_ids, ds.patient_ids
+    return logits, targets, ds.ecg_ids, ds.patient_ids
 
 
 def config_differences(a: Any, b: Any, prefix: str = "") -> dict[str, dict[str, Any]]:

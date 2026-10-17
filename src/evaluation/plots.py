@@ -1,7 +1,7 @@
-"""ROC, precision-recall, confusion-matrix, training-curve and class-support figures (PROJECT_SPEC.md section 4).
+"""ROC, precision-recall, confusion-matrix, reliability, training-curve and class-support figures (PROJECT_SPEC.md section 4).
 
-Every function takes real arrays or a run's CSV and writes one PNG; nothing here computes a number that is
-not drawn from its inputs. Reliability diagrams come with temperature scaling (src/training/calibrate.py).
+Every function takes real arrays, a run's CSV or binned numbers from a report and writes one PNG; nothing here
+computes a number that is not drawn from its inputs.
 
 Style follows the frontend palette in PROJECT_SPEC.md section 7 (white surface, #1A1A1A ink, muted teal
 accent), so the figures sit on the Model Performance page without clashing. Operating points are told
@@ -227,6 +227,86 @@ def plot_confusion_matrices(per_class: Mapping[str, Mapping[str, Any]], classes:
             ax.set_ylabel("Truth", fontsize=8, color=INK_SECONDARY)
         ax.set_title(f"{c}  ·  threshold {m['threshold']:.3f}", fontsize=9.5, color=INK, loc="left")
     _finish(fig, title, subtitle)
+    return _save(fig, path, dpi)
+
+
+COUNT_PANEL_RATIO = 0.38     # height of the records-per-bin panel, as a share of the square reliability panel
+BEFORE_STYLE = {"color": MUTED, "marker": "D", "linestyle": (0, (4, 2))}   # uncalibrated: grey, dashed, diamonds
+AFTER_STYLE = {"color": ACCENT, "marker": "o", "linestyle": "-"}           # calibrated: the model's teal, solid, circles
+
+
+def _check_bins(bins: Mapping[str, Mapping[str, Any]], classes: Sequence[str], name: str) -> None:
+    for c in classes:
+        if c not in bins:
+            raise ValueError(f"{name}: no reliability bins for {c}")
+        b = bins[c]
+        n = len(b["count"])
+        if len(b["edges"]) != n + 1 or len(b["mean_predicted"]) != n or len(b["observed_frequency"]) != n:
+            raise ValueError(f"{name} {c}: bins are inconsistent ({len(b['edges'])} edges, {n} counts)")
+
+
+def plot_reliability_diagrams(before: Mapping[str, Mapping[str, Any]], after: Mapping[str, Mapping[str, Any]],
+                              labels: tuple[str, str], classes: Sequence[str], descriptions: Mapping[str, str],
+                              annotations: Mapping[str, str], path: Path, *, title: str, subtitle: str | None,
+                              dpi: int, panel_in: float) -> Path:
+    """Per class: a reliability diagram (top) and the records in each probability bin (bottom), before and after.
+
+    before, after: {class: metrics.reliability_bins(...)} for the uncalibrated and the calibrated probabilities;
+    labels: their legend texts; annotations: {class: text written in the class's panel, e.g. the ECEs}.
+    Each non-empty bin is a point at (mean predicted probability, observed frequency); a calibrated model's
+    points lie on the diagonal. The count panel is logarithmic, so bins holding a handful of records, whose
+    observed frequency is correspondingly noisy, stay visible.
+    """
+    _check_bins(before, classes, labels[0])
+    _check_bins(after, classes, labels[1])
+    side = panel_in - PANEL_Y_LABELS_IN  # the square reliability panel; its x axis is the count panel's
+    height = side * (1 + COUNT_PANEL_RATIO) + PANEL_LABELS_IN + HEADER_IN + LEGEND_BAND_IN
+    fig, axes = plt.subplots(2, len(classes), figsize=(panel_in * len(classes), height), squeeze=False,
+                             facecolor=SURFACE, gridspec_kw={"height_ratios": [1, COUNT_PANEL_RATIO]})
+    series = ((before, BEFORE_STYLE), (after, AFTER_STYLE))
+    max_count = max(max(b[c]["count"]) for b, _ in series for c in classes)
+    for j, c in enumerate(classes):
+        ax, count_ax = axes[0, j], axes[1, j]
+        ax.plot([0, 1], [0, 1], color=AXIS, linewidth=REFERENCE_WIDTH)
+        for bins, style in series:
+            filled = [i for i, n in enumerate(bins[c]["count"]) if n]
+            ax.plot([bins[c]["mean_predicted"][i] for i in filled], [bins[c]["observed_frequency"][i] for i in filled],
+                    color=style["color"], linestyle=style["linestyle"], linewidth=CURVE_WIDTH, marker=style["marker"],
+                    markersize=MARKER_SIZE - 2, markerfacecolor=style["color"], markeredgecolor=SURFACE, zorder=3)
+        ax.text(0.03, 0.97, annotations[c], transform=ax.transAxes, ha="left", va="top", fontsize=8, color=INK,
+                linespacing=1.4)
+        _style(ax)
+        ax.set(xlim=(0, 1), ylim=(0, 1), aspect="equal")
+        ax.set_anchor("S")  # sit directly on the count panel, which carries the shared x axis labels
+        ax.set_xticks(after[c]["edges"][::2])
+        ax.tick_params(labelbottom=False)
+        if j == 0:
+            ax.set_ylabel("Observed frequency", fontsize=8)
+        _class_title(ax, c, descriptions)
+
+        edges = np.asarray(after[c]["edges"])
+        width = np.diff(edges)
+        for k, (bins, style) in enumerate(series):
+            if not np.array_equal(np.asarray(bins[c]["edges"]), edges):
+                raise ValueError(f"{c}: the two series use different bin edges")
+            ax_x = edges[:-1] + width * (0.06 + 0.44 * k)  # two side-by-side bars per bin
+            counts = np.asarray(bins[c]["count"], dtype=float)
+            count_ax.bar(ax_x[counts > 0], counts[counts > 0], width=width[0] * 0.42, align="edge",
+                         color=style["color"])
+        _style(count_ax)
+        count_ax.set_yscale("log")
+        count_ax.set_ylim(0.8, max_count * 1.6)
+        count_ax.set_xlim(0, 1)
+        count_ax.set_xticks(after[c]["edges"][::2])
+        count_ax.grid(axis="x", visible=False)
+        count_ax.set_xlabel("Predicted probability (bin)", fontsize=8)
+        if j == 0:
+            count_ax.set_ylabel("Records", fontsize=8)
+    handles = [Line2D([], [], color=AXIS, linewidth=REFERENCE_WIDTH, label="Perfect calibration"),
+               *[Line2D([], [], color=s["color"], linestyle=s["linestyle"], linewidth=CURVE_WIDTH, marker=s["marker"],
+                        markersize=MARKER_SIZE - 2, markerfacecolor=s["color"], markeredgecolor=SURFACE, label=label)
+                 for s, label in zip((BEFORE_STYLE, AFTER_STYLE), labels)]]
+    _finish(fig, title, subtitle, handles)
     return _save(fig, path, dpi)
 
 

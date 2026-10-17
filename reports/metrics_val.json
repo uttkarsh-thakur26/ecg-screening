@@ -1,10 +1,10 @@
 {
-  "description": "Validation split only. Thresholds were chosen on these same records, so the thresholded metrics are optimistic; the unbiased estimate is the one-time fold-10 evaluation. AUROC and AUPRC are threshold-free but still optimistic by a little, because the checkpoint epoch was also chosen on this split.",
-  "generated_by": "python -m src.evaluation.evaluate_val",
-  "generated_at": "2026-10-17T18:21:07+00:00",
+  "description": "Validation split only. The calibration and the thresholds were chosen on these same records, so the thresholded metrics are optimistic; the unbiased estimate is the one-time fold-10 evaluation. AUROC and AUPRC are threshold-free and unchanged by calibration, but still optimistic by a little, because the checkpoint epoch was also chosen on this split.",
+  "generated_by": "python -m src.training.calibrate",
+  "generated_at": "2026-10-17T19:06:47+00:00",
   "git": {
-    "commit": "6b87554e7486b452ed77e135663783810d2cdb08",
-    "dirty": false
+    "commit": "6bfde8358476260aa573dfccd6c47826a606b767",
+    "dirty": true
   },
   "split": "val",
   "folds": [
@@ -23,8 +23,41 @@
       "augmentation.amplitude_scale.enabled=false"
     ]
   },
-  "probabilities": "sigmoid of the model's logits, uncalibrated (no temperature scaling)",
-  "decision_rule": "flag the class when its probability is >= the class's threshold",
+  "probabilities": "calibrated: per class, sigmoid(a * logit + b) with the calibrator chosen in the calibration file (temperature scaling: a = 1/T, b = 0; Platt scaling: fitted a and b)",
+  "post_calibration": true,
+  "calibration": {
+    "file": "reports/calibration.json",
+    "sha256": "8b3374c60b68dec5214e1cd1950bb17a2b8dc3bc5f1950b46aa131f0958be097",
+    "per_class": {
+      "NORM": {
+        "method": "temperature",
+        "a": 0.6848494158008892,
+        "b": 0.0,
+        "temperature": 1.460175006253837
+      },
+      "MI": {
+        "method": "platt",
+        "a": 0.6720008195644352,
+        "b": -0.9441746675727068
+      },
+      "STTC": {
+        "method": "platt",
+        "a": 0.7391651759619916,
+        "b": -1.1781540812886497
+      },
+      "CD": {
+        "method": "platt",
+        "a": 0.7060856348612679,
+        "b": -1.378120041250891
+      },
+      "HYP": {
+        "method": "platt",
+        "a": 0.6184604261913916,
+        "b": -1.4922618821224223
+      }
+    }
+  },
+  "decision_rule": "flag the class when its calibrated probability is >= the class's threshold",
   "classes": [
     "NORM",
     "MI",
@@ -89,7 +122,7 @@
       ],
       "per_class": {
         "NORM": {
-          "threshold": 0.37759270737603023,
+          "threshold": 0.4152574292946774,
           "tp": 878,
           "fp": 185,
           "fn": 77,
@@ -101,7 +134,7 @@
           "f1": 0.8701684836471755
         },
         "MI": {
-          "threshold": 0.6447710303730486,
+          "threshold": 0.3673568018073194,
           "tp": 428,
           "fp": 155,
           "fn": 112,
@@ -113,7 +146,7 @@
           "f1": 0.7622439893143366
         },
         "STTC": {
-          "threshold": 0.7087437742836008,
+          "threshold": 0.37266018959753316,
           "tp": 426,
           "fp": 167,
           "fn": 102,
@@ -125,7 +158,7 @@
           "f1": 0.760035682426405
         },
         "CD": {
-          "threshold": 0.7536454427118925,
+          "threshold": 0.3569537971230041,
           "tp": 389,
           "fp": 126,
           "fn": 106,
@@ -137,7 +170,7 @@
           "f1": 0.7702970297029703
         },
         "HYP": {
-          "threshold": 0.8496305244955059,
+          "threshold": 0.39621285121338645,
           "tp": 155,
           "fp": 77,
           "fn": 113,
@@ -175,7 +208,7 @@
       ],
       "per_class": {
         "MI": {
-          "threshold": 0.3018506523579177,
+          "threshold": 0.1812876491245789,
           "tp": 486,
           "fp": 319,
           "fn": 54,
@@ -187,7 +220,7 @@
           "f1": 0.7226765799256506
         },
         "STTC": {
-          "threshold": 0.46794190365444616,
+          "threshold": 0.21873230845671976,
           "tp": 476,
           "fp": 312,
           "fn": 52,
@@ -199,7 +232,7 @@
           "f1": 0.723404255319149
         },
         "CD": {
-          "threshold": 0.32798596628406296,
+          "threshold": 0.13186126362385822,
           "tp": 446,
           "fp": 363,
           "fn": 49,
@@ -211,7 +244,7 @@
           "f1": 0.6840490797546013
         },
         "HYP": {
-          "threshold": 0.15406702423812416,
+          "threshold": 0.07272719688635824,
           "tp": 242,
           "fp": 524,
           "fn": 26,
