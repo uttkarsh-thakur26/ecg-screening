@@ -3,8 +3,10 @@
     python -m src.models.baselines
 
 Both are fit on the training split (folds 1-8) and scored on the validation split (fold 9); the
-results go to reports/baselines_val.json. Nothing is tuned: every setting is fixed in config
-baselines. This module asks the cache for the "train" and "val" rows only and never opens the test split.
+results go to reports/baselines_val.json. No setting was tuned against labels or the validation
+split: the gradient boosting uses scikit-learn's defaults, and the beat detector's settings were
+chosen on training records with a label-free check (src/models/rpeak_check.py). This module asks
+the cache for the "train" and "val" rows only and never opens the test split.
 
 1. Prior baseline. Every record gets each class's frequency in the training split as its probability.
    All records get the same score, so it cannot rank one above another: its AUROC is exactly 0.5
@@ -58,9 +60,10 @@ FIT_SPLIT, EVAL_SPLIT = "train", "val"
 
 
 def _samples(seconds: float, fs: float) -> int:
+    """A duration as a whole number of samples. Raises unless it is one, so the setting recorded is the one used."""
     n = round(seconds * fs)
-    if n < 1:
-        raise ValueError(f"{seconds} s is less than one sample at {fs} Hz")
+    if n < 1 or not math.isclose(seconds * fs, n, rel_tol=0, abs_tol=1e-6):
+        raise ValueError(f"{seconds} s is not a whole number of samples (at least one) at {fs} Hz")
     return n
 
 
@@ -89,13 +92,18 @@ def detect_rpeaks(lead: np.ndarray, fs: float, rp: dict[str, Any]) -> np.ndarray
     6. Each beat is placed at the largest band-passed deflection near its energy peak, normally the R
        wave; in a lead where the QRS is mostly negative it is the S or Q wave. RR intervals do not
        depend on which, as long as it is the same wave in every beat.
-    A lead with no QRS energy (flat) has no beats.
+    7. Two beats placed closer than the refractory period are one beat (typically the two energy humps
+       of a wide ventricular complex); the one with more energy is kept. So returned beats are always
+       at least refractory_s apart.
+    A constant lead has no beats.
     """
     x = np.asarray(lead, dtype=np.float64)
     if x.ndim != 1:
         raise ValueError(f"Expected one lead of shape (samples,), got {x.shape}")
     if not np.isfinite(x).all():
         raise ValueError("Lead contains NaN or infinite samples")
+    if np.ptp(x) == 0:  # exactly constant: filter round-off would otherwise produce tiny "peaks"
+        return np.empty(0, dtype=np.int64)
     low, high = rp["band_hz"]
     filtered = sosfiltfilt(bandpass_sos(fs, low, high, rp["filter_order"]), x)
     slope = np.gradient(filtered)
@@ -136,10 +144,17 @@ def detect_rpeaks(lead: np.ndarray, fs: float, rp: dict[str, Any]) -> np.ndarray
                     missed.append(int(inside[np.argmax(energy[inside])]))
         beats = sorted(beats + missed)
 
-    positions = []
+    positions: list[int] = []
+    strengths: list[float] = []
     for c in beats:
         lo, hi = max(0, c - half), min(len(x), c + half + 1)
-        positions.append(lo + int(np.argmax(np.abs(filtered[lo:hi]))))
+        position = lo + int(np.argmax(np.abs(filtered[lo:hi])))
+        if positions and position - positions[-1] < refractory:
+            if energy[c] > strengths[-1]:
+                positions[-1], strengths[-1] = position, float(energy[c])
+            continue
+        positions.append(position)
+        strengths.append(float(energy[c]))
     return np.asarray(positions, dtype=np.int64)
 
 
@@ -161,11 +176,11 @@ def lead_statistics(record: np.ndarray) -> np.ndarray:
     """LEAD_STATS of every lead of one (leads, samples) record, lead by lead: I_mean, I_std, ..., V6_kurtosis.
 
     Standard deviation, skewness and kurtosis are population moments (scipy's defaults; kurtosis is
-    Fisher's, 0 for a normal distribution). Skewness and kurtosis are NaN for a flat lead, where they are undefined.
+    Fisher's, 0 for a normal distribution). Skewness and kurtosis are NaN for a constant lead, where they are undefined.
     """
     x = np.asarray(record, dtype=np.float64)
     std = x.std(axis=1)
-    flat = std == 0
+    flat = np.ptp(x, axis=1) == 0  # exact, whatever the offset; std can be ~1e-17 for a constant non-zero lead
     sk = np.full(len(x), np.nan)
     ku = np.full(len(x), np.nan)
     sk[~flat] = skew(x[~flat], axis=1)
@@ -177,19 +192,25 @@ def feature_names(leads: list[str]) -> list[str]:
     return list(RR_FEATURES) + [f"{lead}_{stat}" for lead in leads for stat in LEAD_STATS]
 
 
-def _features_chunk(task: tuple[str, np.ndarray, float, list[str], dict[str, Any]]) -> tuple[np.ndarray, np.ndarray]:
+def _features_chunk(
+    task: tuple[str, np.ndarray, np.ndarray, float, list[str], dict[str, Any]],
+) -> tuple[np.ndarray, np.ndarray]:
     """Features of some cache rows, and the beat count on the rhythm lead and on each agreement lead."""
-    signals_path, rows, fs, leads, rp = task
+    signals_path, rows, ecg_ids, fs, leads, rp = task
     signals = np.load(signals_path, mmap_mode="r")
     rhythm = leads.index(rp["lead"])
     others = [leads.index(name) for name in rp["agreement_leads"]]
     features = np.empty((len(rows), len(feature_names(leads))))
     counts = np.empty((len(rows), 1 + len(others)), dtype=np.int64)
-    for k, row in enumerate(rows):
-        record = np.asarray(signals[row], dtype=np.float64)
-        beats = detect_rpeaks(record[rhythm], fs, rp)
-        features[k] = np.concatenate([rr_features(beats, fs, rp["min_rr_intervals"], rp["rr_std_ddof"]), lead_statistics(record)])
-        counts[k] = [len(beats)] + [len(detect_rpeaks(record[j], fs, rp)) for j in others]
+    for k, (row, ecg_id) in enumerate(zip(rows, ecg_ids)):
+        try:
+            record = np.asarray(signals[row], dtype=np.float64)
+            beats = detect_rpeaks(record[rhythm], fs, rp)
+            features[k] = np.concatenate([rr_features(beats, fs, rp["min_rr_intervals"], rp["rr_std_ddof"]),
+                                          lead_statistics(record)])
+            counts[k] = [len(beats)] + [len(detect_rpeaks(record[j], fs, rp)) for j in others]
+        except ValueError as exc:
+            raise ValueError(f"ecg_id {ecg_id} (cache row {row}): {exc}") from exc
     return features, counts
 
 
@@ -213,8 +234,9 @@ def extract_features(cache: Cache, rows: np.ndarray, cfg: dict[str, Any], desc: 
         raise ValueError("The rhythm lead cannot also be an agreement lead")
     check_rpeak_config(rp, fs)
 
-    chunks = np.array_split(rows, math.ceil(len(rows) / b["chunk_size"]))
-    tasks = [(str(cache.signals_path), chunk, fs, leads, rp) for chunk in chunks]
+    chunks = np.array_split(np.asarray(rows), math.ceil(len(rows) / b["chunk_size"]))
+    ecg_ids = cache.index["ecg_id"].to_numpy()
+    tasks = [(str(cache.signals_path), chunk, ecg_ids[chunk], fs, leads, rp) for chunk in chunks]
     start = time.perf_counter()
     with ProcessPoolExecutor(max_workers=b["workers"]) as pool:
         parts = list(tqdm(pool.map(_features_chunk, tasks), total=len(tasks), desc=desc, unit="chunk"))  # in task order
@@ -319,7 +341,9 @@ def run(cfg: dict[str, Any]) -> dict[str, Any]:
 
     return {
         "description": f"Baselines fit on the {FIT_SPLIT} split and scored on the {EVAL_SPLIT} split only "
-                       "(PROJECT_SPEC.md section 3). Nothing was tuned. The test split was not opened.",
+                       "(PROJECT_SPEC.md section 3). No setting was tuned against labels or the validation split: "
+                       "scikit-learn's default gradient boosting, and beat-detector settings chosen on training records "
+                       "with a label-free cross-lead check. The test split was not opened.",
         "generated_by": "python -m src.models.baselines",
         "generated_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
         "git": git_state(),

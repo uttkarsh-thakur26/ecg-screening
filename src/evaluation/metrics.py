@@ -30,6 +30,8 @@ def validate_predictions(y_true: np.ndarray, y_prob: np.ndarray, classes: Sequen
     y_true: (records, classes) multi-hot 0/1. y_prob: (records, classes) probabilities in [0, 1], one
     independent sigmoid output per class (not a softmax), so a row need not sum to 1.
     """
+    if isinstance(classes, str) or len(set(classes)) != len(classes):
+        raise ValueError(f"classes must be a sequence of distinct class names, got {classes!r}")
     y_true = np.asarray(y_true)
     y_prob = np.asarray(y_prob, dtype=np.float64)
     if y_true.ndim != 2 or y_prob.ndim != 2:

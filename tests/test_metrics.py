@@ -38,6 +38,22 @@ def test_hand_worked_example():
     assert (m["n_positive"], m["n_negative"], m["prevalence"]) == (2, 2, 0.5)
 
 
+def test_counts_on_unbalanced_data():
+    y = np.array([[1, 0], [0, 0], [0, 1], [0, 1], [0, 1]])
+    p = np.array([[0.9, 0.1], [0.2, 0.3], [0.4, 0.8], [0.3, 0.7], [0.1, 0.6]])
+    m = ranking_metrics(y, p, ["A", "B"])["per_class"]
+    assert (m["A"]["n_positive"], m["A"]["n_negative"], m["A"]["prevalence"]) == (1, 4, 0.2)
+    assert (m["B"]["n_positive"], m["B"]["n_negative"], m["B"]["prevalence"]) == (3, 2, 0.6)
+
+
+def test_saturated_probabilities_are_accepted():
+    """A float32 sigmoid returns exactly 0 and 1 for large logits; those are valid probabilities."""
+    y = np.array([[0], [0], [1], [1]])
+    p = np.array([[0.0], [0.3], [0.7], [1.0]], dtype=np.float32)
+    m = ranking_metrics(y, p, ["A"])["per_class"]["A"]
+    assert m["auroc"] == 1.0 and m["auprc"] == 1.0
+
+
 def test_constant_scores_rank_at_chance():
     """What the prior baseline does: one score for every record gives AUROC 0.5 and AUPRC = prevalence."""
     y = np.array([[1, 0], [0, 0], [0, 1], [0, 1], [1, 1], [0, 1], [0, 0], [0, 1]])
@@ -90,6 +106,10 @@ def test_matches_independent_implementations_with_ties(seed):
         ([[0], [2]], [[0.2], [0.7]], ["A"], "only 0 and 1"),
         ([[0], [1]], [[0.2], [np.nan]], ["A"], "NaN"),
         ([[0], [1]], [[-1.3], [2.1]], ["A"], "sigmoid"),  # logits passed by mistake
+        ([[0], [1]], [[0.2], [1.5]], ["A"], "sigmoid"),  # above 1 only
+        ([[0], [1]], [[-0.1], [0.7]], ["A"], "sigmoid"),  # below 0 only
+        ([[0, 1], [1, 0]], [[0.2, 0.3], [0.7, 0.4]], ["A", "A"], "distinct"),  # a duplicate would merge two classes
+        ([[0, 1], [1, 0]], [[0.2, 0.3], [0.7, 0.4]], "AB", "distinct"),  # a bare string is not a list of names
         ([[0, 1], [0, 1]], [[0.2, 0.3], [0.7, 0.4]], ["A", "B"], r"A \(0 of 2 positive\), B \(2 of 2 positive\)"),
         (np.empty((0, 1)), np.empty((0, 1)), ["A"], "No records"),
     ],
