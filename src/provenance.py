@@ -17,6 +17,11 @@ def _git(*args: str) -> str:
     return out.stdout.strip()
 
 
+def git_tree(commit: str, path: str) -> str:
+    """Hash of the directory `path` at `commit`. Two commits with equal hashes have identical contents there."""
+    return _git("rev-parse", f"{commit}:{path}")
+
+
 def git_state() -> dict[str, str | bool]:
     """{"commit": full SHA of HEAD, "dirty": True if tracked files differ from it}. Untracked files are ignored."""
     return {

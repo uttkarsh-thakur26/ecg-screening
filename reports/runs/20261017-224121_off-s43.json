@@ -1,0 +1,334 @@
+{
+  "run_id": "20261017-224121_off-s43",
+  "mode": "train",
+  "status": "completed",
+  "generated_by": "python -m src.training.train --name off-s43 --set training.seed=43",
+  "started_at": "2026-10-17T17:11:21+00:00",
+  "git": {
+    "commit": "3a6eccf7785d8df65db4f8018958f88c3425ec11",
+    "dirty": false
+  },
+  "seed": 43,
+  "overrides": [
+    "training.seed=43"
+  ],
+  "config": {
+    "paths": {
+      "raw_dir": "data/raw",
+      "cache_dir": "data/cache",
+      "checkpoints_dir": "checkpoints",
+      "reports_dir": "reports",
+      "figures_dir": "reports/figures",
+      "runs_dir": "reports/runs"
+    },
+    "dataset": {
+      "name": "PTB-XL",
+      "version": "1.0.3",
+      "base_url": "https://physionet.org/files/ptb-xl/1.0.3/",
+      "checksum_manifest": "SHA256SUMS.txt",
+      "checksum_manifest_sha256": "b7224b92b341511ec3ceb13dc6652079b2c36a06504bcb49506f157f51dc695d",
+      "database_csv": "ptbxl_database.csv",
+      "statements_csv": "scp_statements.csv",
+      "record_dirs": [
+        "records100"
+      ],
+      "record_path_column": "filename_lr",
+      "sampling_rate_hz": 100,
+      "record_duration_s": 10,
+      "n_leads": 12,
+      "expected_records": 21799,
+      "expected_patients": 18869
+    },
+    "download": {
+      "source_url": "https://physionet-open.s3.amazonaws.com/ptb-xl/1.0.3/",
+      "workers": 32,
+      "timeout_s": 60,
+      "max_attempts": 5,
+      "retry_backoff_s": 2.0,
+      "chunk_size_bytes": 65536,
+      "lock_file": ".download.lock"
+    },
+    "splits": {
+      "train_folds": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8
+      ],
+      "val_folds": [
+        9
+      ],
+      "test_folds": [
+        10
+      ]
+    },
+    "labels": {
+      "superclasses": [
+        "NORM",
+        "MI",
+        "STTC",
+        "CD",
+        "HYP"
+      ],
+      "descriptions": {
+        "NORM": "Normal ECG",
+        "MI": "Myocardial infarction",
+        "STTC": "ST/T change",
+        "CD": "Conduction disturbance",
+        "HYP": "Hypertrophy"
+      },
+      "min_likelihood": 0,
+      "physionet_reference_counts": {
+        "NORM": 9514,
+        "MI": 5469,
+        "STTC": 5235,
+        "CD": 4898,
+        "HYP": 2649
+      }
+    },
+    "norm_stats": {
+      "file": "norm_stats.json",
+      "std_ddof": 0,
+      "workers": 8,
+      "chunk_size": 64
+    },
+    "preprocessing": {
+      "bandpass": {
+        "enabled": false,
+        "low_hz": 0.5,
+        "high_hz": 40.0,
+        "order": 2
+      }
+    },
+    "cache": {
+      "signals_file": "signals.npy",
+      "labels_file": "labels.npy",
+      "index_file": "index.csv",
+      "meta_file": "meta.json",
+      "workers": 8,
+      "chunk_size": 64
+    },
+    "augmentation": {
+      "time_shift": {
+        "enabled": true,
+        "window_s": 8
+      },
+      "amplitude_scale": {
+        "enabled": false,
+        "range": [
+          0.8,
+          1.2
+        ]
+      },
+      "gaussian_noise": {
+        "enabled": true,
+        "sigma": 0.05
+      }
+    },
+    "dataloader": {
+      "num_workers": {
+        "train": 2,
+        "val": 0,
+        "test": 0
+      },
+      "pin_memory": true,
+      "persistent_workers": true
+    },
+    "model": {
+      "stem_channels": 64,
+      "stem_kernel": 7,
+      "stem_stride": 2,
+      "stem_pool_kernel": 3,
+      "stem_pool_stride": 2,
+      "stage_channels": [
+        64,
+        128,
+        256,
+        512
+      ],
+      "stage_strides": [
+        1,
+        2,
+        2,
+        2
+      ],
+      "blocks_per_stage": 2,
+      "block_kernel": 5,
+      "block_dropout": 0.2,
+      "head_dropout": 0.3
+    },
+    "training": {
+      "batch_size": 64,
+      "optimizer": "adamw",
+      "lr": 0.001,
+      "weight_decay": 0.01,
+      "lr_schedule": "warmup_cosine",
+      "warmup_epochs": 2,
+      "min_lr_ratio": 0.0,
+      "max_epochs": 50,
+      "early_stopping_metric": "val_macro_auroc",
+      "early_stopping_patience": 8,
+      "early_stopping_min_delta": 0.0,
+      "seed": 43,
+      "device": "cuda",
+      "deterministic": true,
+      "overfit": {
+        "n_samples": 50,
+        "epochs": 300,
+        "max_loss": 0.01
+      }
+    },
+    "comparison": {
+      "bootstrap_samples": 2000,
+      "ci_level": 0.95,
+      "reproduce_tolerance": 1e-06
+    },
+    "evaluation": {
+      "reliability_bins": 10,
+      "high_sensitivity_target": 0.9
+    },
+    "baselines": {
+      "report_file": "baselines_val.json",
+      "workers": 8,
+      "chunk_size": 128,
+      "rpeaks": {
+        "lead": "II",
+        "band_hz": [
+          5.0,
+          15.0
+        ],
+        "filter_order": 2,
+        "integration_window_s": 0.15,
+        "refractory_s": 0.2,
+        "signal_level_top_fraction": 0.33,
+        "threshold_fraction": 0.3,
+        "twave_window_s": 0.36,
+        "twave_slope_ratio": 0.5,
+        "searchback_rr_ratio": 1.66,
+        "searchback_threshold_ratio": 0.5,
+        "peak_search_s": 0.08,
+        "min_rr_intervals": 2,
+        "rr_std_ddof": 1,
+        "agreement_leads": [
+          "I",
+          "V5"
+        ],
+        "agreement_tolerance_beats": 1
+      },
+      "rpeak_check": {
+        "records": 3000
+      },
+      "gradient_boosting": {
+        "learning_rate": 0.1,
+        "max_iter": 100,
+        "max_leaf_nodes": 31,
+        "min_samples_leaf": 20,
+        "l2_regularization": 0.0,
+        "max_bins": 255,
+        "early_stopping": false
+      }
+    },
+    "sample_plot": {
+      "lead": "II",
+      "output": "reports/figures/sample_record.png",
+      "dpi": 150,
+      "figure_width_in": 14,
+      "paper_speed_mm_per_s": 25,
+      "gain_mm_per_mv": 10,
+      "grid_minor_s": 0.04,
+      "grid_major_s": 0.2,
+      "grid_minor_mv": 0.1,
+      "grid_major_mv": 0.5
+    }
+  },
+  "environment": {
+    "python": "3.11.9",
+    "platform": "Windows-10-10.0.26300-SP0",
+    "torch": "2.14.1+cu126",
+    "device": "cuda",
+    "cuda": "12.6",
+    "cudnn": 91002,
+    "gpu": "NVIDIA GeForce RTX 3050 Laptop GPU"
+  },
+  "parameters": 6290821,
+  "classes": [
+    "NORM",
+    "MI",
+    "STTC",
+    "CD",
+    "HYP"
+  ],
+  "pos_weight": {
+    "NORM": 1.2490785121917725,
+    "MI": 2.9013473987579346,
+    "STTC": 3.0812230110168457,
+    "CD": 3.372664451599121,
+    "HYP": 7.062293529510498
+  },
+  "data": {
+    "preprocessing": "raw",
+    "train_records": 17084,
+    "val_records": 2146,
+    "val_ecg_ids_sha256": "87475dc96b15c6c41dde24640470b4955b19134d425cc03e269642147d9ac8e5",
+    "signals_sha256": "a1be2648f17bf77540c291752629bd05bf855ac268d498eff56db1f113fbddb7",
+    "augmentation": "noise sigma 0.05, time shift up to +/-200 samples"
+  },
+  "steps_per_epoch": 267,
+  "checkpoint": "checkpoints/20261017-224121_off-s43/best.pt",
+  "finished_at": "2026-10-17T17:15:40+00:00",
+  "epochs_run": 22,
+  "stopped_early": true,
+  "train_seconds": 258.7,
+  "best": {
+    "per_class": {
+      "NORM": {
+        "auroc": 0.9419265784834777,
+        "auprc": 0.9218625138699515,
+        "n_positive": 955,
+        "n_negative": 1191,
+        "prevalence": 0.4450139794967381
+      },
+      "MI": {
+        "auroc": 0.9249654074996541,
+        "auprc": 0.8330708295401418,
+        "n_positive": 540,
+        "n_negative": 1606,
+        "prevalence": 0.2516309412861137
+      },
+      "STTC": {
+        "auroc": 0.9301068472112971,
+        "auprc": 0.7895297938095592,
+        "n_positive": 528,
+        "n_negative": 1618,
+        "prevalence": 0.24603914259086673
+      },
+      "CD": {
+        "auroc": 0.9307062141707811,
+        "auprc": 0.8482442708295703,
+        "n_positive": 495,
+        "n_negative": 1651,
+        "prevalence": 0.23066169617893756
+      },
+      "HYP": {
+        "auroc": 0.9083953237009837,
+        "auprc": 0.6655812207182041,
+        "n_positive": 268,
+        "n_negative": 1878,
+        "prevalence": 0.12488350419384903
+      }
+    },
+    "macro": {
+      "auroc": 0.9272200742132387,
+      "auprc": 0.8116577257534854,
+      "prevalence": 0.259645852749301
+    },
+    "epoch": 14,
+    "train_loss": 0.4438860636074519,
+    "val_loss": 0.6031897710176238
+  },
+  "csv": "reports/runs/20261017-224121_off-s43.csv"
+}

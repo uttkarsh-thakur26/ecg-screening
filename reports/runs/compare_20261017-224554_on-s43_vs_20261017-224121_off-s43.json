@@ -1,0 +1,145 @@
+{
+  "description": "Run B minus run A on the val split, best checkpoint of each. Intervals: paired bootstrap over validation patients (2000 resamples, 95%). They cover the choice of validation patients, not training noise from the seed.",
+  "generated_by": "python -m src.training.compare_runs 20261017-224554_on-s43 20261017-224121_off-s43",
+  "generated_at": "2026-10-17T17:30:36+00:00",
+  "git": {
+    "commit": "3a6eccf7785d8df65db4f8018958f88c3425ec11",
+    "dirty": false
+  },
+  "runs": {
+    "a": {
+      "run_id": "20261017-224554_on-s43",
+      "overrides": [
+        "training.seed=43",
+        "augmentation.amplitude_scale.enabled=true"
+      ],
+      "best_epoch": 14,
+      "epochs_run": 22,
+      "git_commit": "3a6eccf7785d8df65db4f8018958f88c3425ec11",
+      "seed": 43
+    },
+    "b": {
+      "run_id": "20261017-224121_off-s43",
+      "overrides": [
+        "training.seed=43"
+      ],
+      "best_epoch": 14,
+      "epochs_run": 22,
+      "git_commit": "3a6eccf7785d8df65db4f8018958f88c3425ec11",
+      "seed": 43
+    }
+  },
+  "config_differences": {
+    "augmentation.amplitude_scale.enabled": {
+      "a": true,
+      "b": false
+    }
+  },
+  "same_commit": true,
+  "records": 2146,
+  "patients": 1917,
+  "bootstrap": {
+    "resamples": 2000,
+    "ci_level": 0.95,
+    "unit": "patient",
+    "seed": 42
+  },
+  "metrics": {
+    "macro_auroc": {
+      "a": 0.9269857087170129,
+      "b": 0.9272200742132387,
+      "b_minus_a": 0.00023436549622579683,
+      "ci_low": -0.001742561542518225,
+      "ci_high": 0.0022289949301864944,
+      "share_b_better": 0.599
+    },
+    "macro_auprc": {
+      "a": 0.812040329173865,
+      "b": 0.8116577257534854,
+      "b_minus_a": -0.0003826034203796569,
+      "ci_low": -0.005223316406729546,
+      "ci_high": 0.004867072264724101,
+      "share_b_better": 0.4595
+    },
+    "NORM_auroc": {
+      "a": 0.9421208804251784,
+      "b": 0.9419265784834777,
+      "b_minus_a": -0.00019430194170066972,
+      "ci_low": -0.0020112609655664106,
+      "ci_high": 0.001717704154439161,
+      "share_b_better": 0.4155
+    },
+    "NORM_auprc": {
+      "a": 0.9223728304360737,
+      "b": 0.9218625138699515,
+      "b_minus_a": -0.0005103165661221043,
+      "ci_low": -0.004207137920595755,
+      "ci_high": 0.0031719413686696757,
+      "share_b_better": 0.387
+    },
+    "MI_auroc": {
+      "a": 0.9223167750565011,
+      "b": 0.9249654074996541,
+      "b_minus_a": 0.002648632443152943,
+      "ci_low": -0.0012998926253709063,
+      "ci_high": 0.006905297918952675,
+      "share_b_better": 0.898
+    },
+    "MI_auprc": {
+      "a": 0.8319063305697776,
+      "b": 0.8330708295401418,
+      "b_minus_a": 0.0011644989703641917,
+      "ci_low": -0.008486015938738628,
+      "ci_high": 0.011807682277750583,
+      "share_b_better": 0.591
+    },
+    "STTC_auroc": {
+      "a": 0.9291001797954827,
+      "b": 0.9301068472112971,
+      "b_minus_a": 0.001006667415814455,
+      "ci_low": -0.001731652336298833,
+      "ci_high": 0.0036822976255139668,
+      "share_b_better": 0.7715
+    },
+    "STTC_auprc": {
+      "a": 0.7869365497713195,
+      "b": 0.7895297938095592,
+      "b_minus_a": 0.0025932440382396837,
+      "ci_low": -0.005090238191379516,
+      "ci_high": 0.01070049395696723,
+      "share_b_better": 0.7335
+    },
+    "CD_auroc": {
+      "a": 0.9340980978776254,
+      "b": 0.9307062141707811,
+      "b_minus_a": -0.0033918837068442897,
+      "ci_low": -0.007888641235132533,
+      "ci_high": 0.0009528719049438317,
+      "share_b_better": 0.0695
+    },
+    "CD_auprc": {
+      "a": 0.85707828637602,
+      "b": 0.8482442708295703,
+      "b_minus_a": -0.008834015546449692,
+      "ci_low": -0.01757481057540861,
+      "ci_high": -0.0006261952205977304,
+      "share_b_better": 0.0145
+    },
+    "HYP_auroc": {
+      "a": 0.9072926104302768,
+      "b": 0.9083953237009837,
+      "b_minus_a": 0.0011027132707069898,
+      "ci_low": -0.0049217378907501766,
+      "ci_high": 0.007251131347963973,
+      "share_b_better": 0.6445
+    },
+    "HYP_auprc": {
+      "a": 0.6619076487161346,
+      "b": 0.6655812207182041,
+      "b_minus_a": 0.003673572002069525,
+      "ci_low": -0.012838319097095222,
+      "ci_high": 0.019579742745598493,
+      "share_b_better": 0.6825
+    }
+  }
+}

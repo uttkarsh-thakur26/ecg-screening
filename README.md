@@ -143,6 +143,7 @@ python -m src.models.resnet1d                     # layer shapes and the paramet
 python -m src.training.train --overfit            # sanity check, about 30 s
 python -m src.training.train --name main          # full run, about 5 min on the RTX 3050 Laptop
 python -m src.training.compare_runs <run A> <run B>   # paired comparison of two runs on the validation split
+python -m src.training.summarize_comparisons --name <name> <compare json> ...   # the same comparison over several seeds
 ```
 
 - **Model** (`src/models/resnet1d.py`). The spec's 1D ResNet: stem Conv1d(12→64, k=7, stride 2) → BN → ReLU →
@@ -160,7 +161,7 @@ python -m src.training.compare_runs <run A> <run B>   # paired comparison of two
   validation macro and per-class AUROC and AUPRC, with the run id, git commit and seed on every row) and
   `reports/runs/<run_id>.json` (effective config, overrides, commit, seed, pos_weight, environment, best epoch).
 - **Reproducibility.** One seed drives the weights, shuffling, augmentation and dropout, and cuDNN and cuBLAS run in
-  deterministic mode, so the same commit, config and seed give the same weights.
+  deterministic mode, so the same code, config and seed give the same weights (checked below).
 - **Overfit check.** 50 training records, augmentation off, 300 steps: training loss 1.008 → 0.00004 (eval mode),
   all 250 labels right. The loop can fit data, so a poor full run would point at the data or the model, not the loop.
 
@@ -182,21 +183,38 @@ The CNN beats the feature baseline in every class. Its smallest gain is in HYP (
 feature baseline's best class, plausibly because per-lead amplitude statistics already capture much of the voltage
 signal of hypertrophy.
 
-**Amplitude-scaling ablation.** Two runs from the same commit and seed that differ only in
-`augmentation.amplitude_scale.enabled` (confirmed by `compare_runs`, which also reloads each best checkpoint and checks
-it reproduces its logged metrics). Intervals: paired bootstrap over the 1,917 validation patients, 2,000 resamples.
+**Amplitude-scaling ablation.** Pairs of runs that differ only in `augmentation.amplitude_scale.enabled`, repeated
+with seeds 42, 43 and 44. Each pair is compared on fold 9 by `compare_runs`, which reloads both best checkpoints and
+checks they reproduce their logged metrics; `summarize_comparisons` then checks that all six runs share the same
+`src/` code and a clean tree, and that the runs of each arm differ only in the seed.
 
-| Metric (fold 9) | Scaling on | Scaling off | Off − on | 95% interval |
-|---|---:|---:|---:|---:|
-| HYP AUPRC | 0.652 | 0.671 | +0.020 | +0.000 to +0.040 |
-| HYP AUROC | 0.902 | 0.909 | +0.007 | −0.001 to +0.015 |
-| Macro AUPRC | 0.812 | 0.816 | +0.005 | −0.001 to +0.010 |
-| Macro AUROC | 0.927 | 0.929 | +0.002 | −0.001 to +0.004 |
+| Metric (fold 9) | Scaling on, mean ± std | Scaling off, mean ± std | Off − on, seeds 42 / 43 / 44 | Off − on, mean ± std | Off better |
+|---|---:|---:|---:|---:|---:|
+| HYP AUPRC | 0.6574 ± 0.0051 | 0.6688 ± 0.0030 | +0.0195 / +0.0037 / +0.0111 | +0.0114 ± 0.0079 | 3 of 3 |
+| HYP AUROC | 0.9042 ± 0.0027 | 0.9068 ± 0.0031 | +0.0067 / +0.0011 / −0.0000 | +0.0026 ± 0.0036 | 2 of 3 |
+| CD AUPRC | 0.8582 ± 0.0047 | 0.8525 ± 0.0084 | −0.0071 / −0.0088 / −0.0011 | −0.0057 ± 0.0041 | 0 of 3 |
+| CD AUROC | 0.9327 ± 0.0018 | 0.9300 ± 0.0014 | −0.0023 / −0.0034 / −0.0025 | −0.0027 ± 0.0006 | 0 of 3 |
+| MI AUPRC | 0.8289 ± 0.0060 | 0.8338 ± 0.0087 | +0.0099 / +0.0012 / +0.0035 | +0.0048 ± 0.0045 | 3 of 3 |
+| Macro AUPRC | 0.8121 ± 0.0006 | 0.8148 ± 0.0027 | +0.0047 / −0.0004 / +0.0037 | +0.0027 ± 0.0027 | 2 of 3 |
+| Macro AUROC | 0.9270 ± 0.0003 | 0.9279 ± 0.0009 | +0.0016 / +0.0002 / +0.0008 | +0.0009 ± 0.0007 | 3 of 3 |
 
-Scaling off gives the higher HYP AUPRC, so it is off in the config. The evidence is weak: the interval's lower end is
-zero, it covers only which patients are in fold 9 and not training noise (one seed per arm), and the setting was chosen
-on fold 9, so fold-9 numbers are now slightly optimistic. The direction fits the clinical picture (hypertrophy
-criteria such as Sokolow–Lyon are voltage thresholds, and a random ×0.8–1.2 factor blurs absolute voltage), and MI and
-NORM AUPRC rose too, while CD fell slightly (−0.007, interval includes zero). Only repeating both arms with other
-seeds would show whether the gap is larger than seed-to-seed variation; the three-seed runs of the final model will at
-least measure that variation for the chosen setting.
+Scaling off raises HYP AUPRC in all three seeds (by +0.011 on average), a gap larger than the
+seed-to-seed spread of either setting (std 0.003–0.005), so it stays off in the config. The
+evidence is still modest. Only seed 42's patient-bootstrap interval excludes zero (seed 43: −0.0128 to
++0.0196; seed 44: −0.0062 to +0.0290), and three seeds out of three pointing the same
+way would happen by chance one time in four if there were no effect (two-sided sign test). The setting was also chosen
+on fold 9, so fold-9 numbers are slightly optimistic; fold 10 has not been used.
+
+It is a trade-off, not a free gain: CD is worse without scaling in every seed (AUROC −0.0027,
+AUPRC −0.0057), while MI improves slightly and macro AUROC barely moves
+(+0.0009). A plausible reading: hypertrophy criteria such as Sokolow–Lyon are voltage
+thresholds, so a random ×0.8–1.2 factor blurs the absolute amplitude HYP depends on, whereas conduction disturbances
+are defined by timing (QRS width, PR interval), which scaling leaves intact, so learning to ignore amplitude may help
+CD. If CD becomes the priority, the setting is worth revisiting.
+
+Across the three seeds the committed config reaches validation macro AUROC 0.928 ± 0.001
+and macro AUPRC 0.815 ± 0.003.
+
+**Determinism check.** The seed-42 "scaling on" run, repeated from a later commit with the same `src/` code and the same
+effective config (`20261017-223546_on-s42-repro`), reproduced all 27 epochs' metrics and the best checkpoint's weights
+bit for bit.
