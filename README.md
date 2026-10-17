@@ -221,3 +221,43 @@ and macro AUPRC 0.815 ± 0.003.
 **Determinism check.** The seed-42 "scaling on" run, repeated from a later commit with the same `src/` code and the same
 effective config (`20261017-223546_on-s42-repro`), reproduced all 27 epochs' metrics and the best checkpoint's weights
 bit for bit.
+
+## Evaluation (validation only)
+
+```powershell
+python -m src.evaluation.evaluate_val     # about 20 s; thresholds, metrics and figures for evaluation.model_run
+```
+
+`evaluate_val` reloads the best checkpoint of the committed-config run (`20261017-215633_no-amp-scale`, seed 42),
+predicts fold 9 with deterministic GPU kernels and checks that the predictions reproduce the validation metrics the run
+logged. It then chooses per-class thresholds on those predictions and writes `reports/thresholds.json`,
+`reports/metrics_val.json` and the figures in `reports/figures/`. Fold 10 is not opened.
+
+- **Max-F1 operating point.** Per class, the threshold with the highest validation F1 (exact ties go to the lower
+  threshold, which keeps the same F1 with more sensitivity).
+- **High-sensitivity operating point.** Per abnormal class (MI, STTC, CD, HYP), the highest threshold whose validation
+  sensitivity is at least 0.90: the most specificity that still catches 9 in 10 cases. NORM gets none, because it is
+  not an abnormality to be caught.
+- A record is flagged when its probability is at least the threshold. Candidate thresholds are the distinct validation
+  probabilities. The probabilities are uncalibrated sigmoid outputs, so the thresholds must be re-derived after
+  temperature scaling.
+
+| Class | AUROC | AUPRC | Max-F1: threshold | Sens | Spec | Prec | F1 | Sens ≥ 0.90: threshold | Sens | Spec | Prec | F1 |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| NORM | 0.947 | 0.931 | 0.378 | 0.919 | 0.845 | 0.826 | 0.870 | – | – | – | – | – |
+| MI | 0.930 | 0.843 | 0.645 | 0.793 | 0.903 | 0.734 | 0.762 | 0.302 | 0.900 | 0.801 | 0.604 | 0.723 |
+| STTC | 0.930 | 0.789 | 0.709 | 0.807 | 0.897 | 0.718 | 0.760 | 0.468 | 0.902 | 0.807 | 0.604 | 0.723 |
+| CD | 0.928 | 0.847 | 0.754 | 0.786 | 0.924 | 0.755 | 0.770 | 0.328 | 0.901 | 0.780 | 0.551 | 0.684 |
+| HYP | 0.909 | 0.671 | 0.850 | 0.578 | 0.959 | 0.668 | 0.620 | 0.154 | 0.903 | 0.721 | 0.316 | 0.468 |
+| **Macro, abnormal** | 0.924 | 0.787 | | 0.741 | 0.921 | 0.719 | 0.728 | | 0.901 | 0.777 | 0.519 | 0.650 |
+
+The thresholds were chosen on the same records they are scored on, so the thresholded numbers are optimistic; the
+unbiased estimate is the one-time fold-10 evaluation with these thresholds frozen. The F1-optimal HYP threshold misses
+42% of hypertrophy cases; holding sensitivity at 0.90 costs 524 false alarms among 1,878 records without HYP
+(specificity 0.72, precision 0.32). Accuracy is not reported: with HYP in 12% of records, never flagging it is 88%
+accurate.
+
+Training curves (`reports/figures/training_curves.png`): validation loss is lowest at epoch 10 (0.547) and back at 0.548
+at the saved epoch 19. After epoch 19 it climbs to 0.58–0.87 while training loss keeps falling and validation macro AUROC
+slips only from 0.929 to 0.922. The model grows more confident without ranking better, the usual first sign of
+overfitting; whether the saved epoch's probabilities are calibrated is measured next (reliability diagrams, ECE).

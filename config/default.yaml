@@ -169,9 +169,20 @@ comparison:                   # src/training/compare_runs.py: two runs' best che
   # The best checkpoint must reproduce the validation metrics logged for its epoch to within this.
   reproduce_tolerance: 1.0e-6
 
-evaluation:                   # spec section 4
-  reliability_bins: 10
+evaluation:                   # spec section 4; src/evaluation/evaluate_val.py uses the validation split only
+  # The run whose best checkpoint is evaluated: the committed config (amplitude scaling off) with seed 42.
+  model_run: 20261017-215633_no-amp-scale
+  # Every other class is an abnormality and gets the high-sensitivity operating point; this one does not.
+  normal_class: NORM
+  # High-sensitivity operating point: per abnormal class, the highest threshold whose validation sensitivity
+  # is >= this. Spec: "sensitivity >= 0.90 for each abnormal class".
   high_sensitivity_target: 0.90
+  reliability_bins: 10
+  thresholds_file: thresholds.json     # in paths.reports_dir
+  val_metrics_file: metrics_val.json   # in paths.reports_dir; reports/metrics.json is the final (test) evaluation's
+  figures:                    # in paths.figures_dir
+    dpi: 150
+    panel_size_in: 3.2        # width and height of one per-class panel, in inches
 
 baselines:                    # spec section 3, src/models/baselines.py; fit on the training split, scored on validation only
   report_file: baselines_val.json   # in paths.reports_dir

@@ -1,0 +1,243 @@
+{
+  "description": "Validation split only. Thresholds were chosen on these same records, so the thresholded metrics are optimistic; the unbiased estimate is the one-time fold-10 evaluation. AUROC and AUPRC are threshold-free but still optimistic by a little, because the checkpoint epoch was also chosen on this split.",
+  "generated_by": "python -m src.evaluation.evaluate_val",
+  "generated_at": "2026-10-17T18:17:27+00:00",
+  "git": {
+    "commit": "cb20e44469955cddfe56af1573c6200368518f4b",
+    "dirty": true
+  },
+  "split": "val",
+  "folds": [
+    9
+  ],
+  "records": 2146,
+  "patients": 1917,
+  "ecg_ids_sha256": "87475dc96b15c6c41dde24640470b4955b19134d425cc03e269642147d9ac8e5",
+  "model": {
+    "run_id": "20261017-215633_no-amp-scale",
+    "checkpoint": "checkpoints/20261017-215633_no-amp-scale/best.pt",
+    "best_epoch": 19,
+    "seed": 42,
+    "training_commit": "46330c162bb2ba7aede503283be3e4f3553e59c3",
+    "overrides": [
+      "augmentation.amplitude_scale.enabled=false"
+    ]
+  },
+  "probabilities": "sigmoid of the model's logits, uncalibrated (no temperature scaling)",
+  "decision_rule": "flag the class when its probability is >= the class's threshold",
+  "classes": [
+    "NORM",
+    "MI",
+    "STTC",
+    "CD",
+    "HYP"
+  ],
+  "thresholds_file": "reports/thresholds.json",
+  "ranking": {
+    "per_class": {
+      "NORM": {
+        "auroc": 0.9473274691073101,
+        "auprc": 0.9314724014154737,
+        "n_positive": 955,
+        "n_negative": 1191,
+        "prevalence": 0.4450139794967381
+      },
+      "MI": {
+        "auroc": 0.9304725335547254,
+        "auprc": 0.8427599237160717,
+        "n_positive": 540,
+        "n_negative": 1606,
+        "prevalence": 0.2516309412861137
+      },
+      "STTC": {
+        "auroc": 0.9298961493800801,
+        "auprc": 0.7885375328761963,
+        "n_positive": 528,
+        "n_negative": 1618,
+        "prevalence": 0.24603914259086673
+      },
+      "CD": {
+        "auroc": 0.9283617519837992,
+        "auprc": 0.8470326564138826,
+        "n_positive": 495,
+        "n_negative": 1651,
+        "prevalence": 0.23066169617893756
+      },
+      "HYP": {
+        "auroc": 0.908852303975331,
+        "auprc": 0.6714225027222376,
+        "n_positive": 268,
+        "n_negative": 1878,
+        "prevalence": 0.12488350419384903
+      }
+    },
+    "macro": {
+      "auroc": 0.9289820416002492,
+      "auprc": 0.8162450034287725,
+      "prevalence": 0.259645852749301
+    }
+  },
+  "operating_points": {
+    "max_f1": {
+      "rule": "per class, the threshold with the highest validation F1; among exact ties, the lowest threshold (same F1, higher sensitivity)",
+      "classes": [
+        "NORM",
+        "MI",
+        "STTC",
+        "CD",
+        "HYP"
+      ],
+      "per_class": {
+        "NORM": {
+          "threshold": 0.37759270737603023,
+          "tp": 878,
+          "fp": 185,
+          "fn": 77,
+          "tn": 1006,
+          "sensitivity": 0.9193717277486911,
+          "specificity": 0.8446683459277917,
+          "precision": 0.825964252116651,
+          "npv": 0.9289012003693444,
+          "f1": 0.8701684836471755
+        },
+        "MI": {
+          "threshold": 0.6447710303730486,
+          "tp": 428,
+          "fp": 155,
+          "fn": 112,
+          "tn": 1451,
+          "sensitivity": 0.7925925925925926,
+          "specificity": 0.9034869240348692,
+          "precision": 0.7341337907375644,
+          "npv": 0.9283429302623161,
+          "f1": 0.7622439893143366
+        },
+        "STTC": {
+          "threshold": 0.7087437742836008,
+          "tp": 426,
+          "fp": 167,
+          "fn": 102,
+          "tn": 1451,
+          "sensitivity": 0.8068181818181818,
+          "specificity": 0.8967861557478368,
+          "precision": 0.718381112984823,
+          "npv": 0.9343206696716033,
+          "f1": 0.760035682426405
+        },
+        "CD": {
+          "threshold": 0.7536454427118925,
+          "tp": 389,
+          "fp": 126,
+          "fn": 106,
+          "tn": 1525,
+          "sensitivity": 0.7858585858585858,
+          "specificity": 0.9236826165960024,
+          "precision": 0.7553398058252427,
+          "npv": 0.935009196811772,
+          "f1": 0.7702970297029703
+        },
+        "HYP": {
+          "threshold": 0.8496305244955059,
+          "tp": 155,
+          "fp": 77,
+          "fn": 113,
+          "tn": 1801,
+          "sensitivity": 0.5783582089552238,
+          "specificity": 0.9589989350372737,
+          "precision": 0.6681034482758621,
+          "npv": 0.9409613375130617,
+          "f1": 0.62
+        }
+      },
+      "macro": {
+        "sensitivity": 0.776599859394655,
+        "specificity": 0.9055245954687547,
+        "precision": 0.7403844819880286,
+        "npv": 0.9335070669256196,
+        "f1": 0.7565490370181776
+      },
+      "macro_abnormal": {
+        "sensitivity": 0.740906892306146,
+        "specificity": 0.9207386578539956,
+        "precision": 0.7189895394558731,
+        "npv": 0.9346585335646882,
+        "f1": 0.7281441753609279
+      }
+    },
+    "high_sensitivity": {
+      "rule": "per abnormal class, the highest threshold with validation sensitivity >= 0.90; NORM has none, as it is not an abnormality to be caught",
+      "target_sensitivity": 0.9,
+      "classes": [
+        "MI",
+        "STTC",
+        "CD",
+        "HYP"
+      ],
+      "per_class": {
+        "MI": {
+          "threshold": 0.3018506523579177,
+          "tp": 486,
+          "fp": 319,
+          "fn": 54,
+          "tn": 1287,
+          "sensitivity": 0.9,
+          "specificity": 0.8013698630136986,
+          "precision": 0.6037267080745342,
+          "npv": 0.959731543624161,
+          "f1": 0.7226765799256506
+        },
+        "STTC": {
+          "threshold": 0.46794190365444616,
+          "tp": 476,
+          "fp": 312,
+          "fn": 52,
+          "tn": 1306,
+          "sensitivity": 0.9015151515151515,
+          "specificity": 0.8071693448702101,
+          "precision": 0.6040609137055838,
+          "npv": 0.9617083946980854,
+          "f1": 0.723404255319149
+        },
+        "CD": {
+          "threshold": 0.32798596628406296,
+          "tp": 446,
+          "fp": 363,
+          "fn": 49,
+          "tn": 1288,
+          "sensitivity": 0.901010101010101,
+          "specificity": 0.7801332525741974,
+          "precision": 0.5512978986402967,
+          "npv": 0.9633507853403142,
+          "f1": 0.6840490797546013
+        },
+        "HYP": {
+          "threshold": 0.15406702423812416,
+          "tp": 242,
+          "fp": 524,
+          "fn": 26,
+          "tn": 1354,
+          "sensitivity": 0.9029850746268657,
+          "specificity": 0.7209797657082002,
+          "precision": 0.31592689295039167,
+          "npv": 0.981159420289855,
+          "f1": 0.46808510638297873
+        }
+      },
+      "macro_abnormal": {
+        "sensitivity": 0.9013775817880296,
+        "specificity": 0.7774130565415766,
+        "precision": 0.5187531033427015,
+        "npv": 0.966487535988104,
+        "f1": 0.6495537553455949
+      }
+    }
+  },
+  "figures": {
+    "roc": "reports/figures/roc_curves_val.png",
+    "pr": "reports/figures/pr_curves_val.png",
+    "confusion_max_f1": "reports/figures/confusion_max_f1_val.png",
+    "confusion_high_sensitivity": "reports/figures/confusion_high_sensitivity_val.png",
+    "training_curves": "reports/figures/training_curves.png",
+    "class_distribution": "reports/figures/class_distribution.png"
+  }
+}

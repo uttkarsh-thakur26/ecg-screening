@@ -1,7 +1,7 @@
 """Metrics for the five-superclass multi-label task (PROJECT_SPEC.md section 4).
 
-First version: per-class and macro AUROC and AUPRC. Thresholded metrics (sensitivity, specificity,
-precision, F1), calibration and reports/metrics.json come later.
+Ranking metrics (no threshold) and metrics at an operating point (one threshold per class, chosen on
+the validation split by src/evaluation/thresholds.py). Calibration and reports/metrics.json come later.
 
 Each class is scored as its own binary problem, because the task is multi-label: a record can be
 positive for several classes, so there is no single "predicted class" to compare.
@@ -12,12 +12,23 @@ positive for several classes, so there is no single "predicted class" to compare
   interpolation (scikit-learn's average_precision_score). A model with no skill scores the class's
   prevalence, so it must be read against that number, which is reported next to it.
 
+At an operating point a record is flagged for a class when its probability is >= the class's threshold:
+- sensitivity (recall) = TP / (TP + FN): share of records with the finding that are flagged
+- specificity = TN / (TN + FP): share of records without it that are not flagged
+- precision (PPV) = TP / (TP + FP): share of flagged records that have it. Undefined (None) when no
+  record is flagged; it is reported as undefined, never replaced by 0.
+- NPV = TN / (TN + FN): share of records not flagged that truly lack it. Undefined when all are flagged.
+- F1 = 2TP / (2TP + FP + FN), the harmonic mean of precision and sensitivity (0 when TP = 0).
+Accuracy is not reported: with NORM in 45% of records and HYP in 12%, a model that never flags HYP is
+88% accurate on it and useless.
+
 Macro values are the unweighted mean over classes, so the rare HYP counts as much as the common NORM.
+A macro value is None when the metric is undefined for any class it averages.
 """
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from typing import Any
 
 import numpy as np
@@ -77,3 +88,61 @@ def ranking_metrics(y_true: np.ndarray, y_prob: np.ndarray, classes: Sequence[st
         }
     macro = {k: float(np.mean([per_class[c][k] for c in classes])) for k in ("auroc", "auprc", "prevalence")}
     return {"per_class": per_class, "macro": macro}
+
+
+THRESHOLD_METRICS = ("sensitivity", "specificity", "precision", "npv", "f1")
+
+
+def _ratio(num: int, den: int) -> float | None:
+    return num / den if den else None
+
+
+def counts_to_metrics(tp: int, fp: int, fn: int, tn: int) -> dict[str, float | None]:
+    """Sensitivity, specificity, precision, NPV and F1 from one class's confusion counts (None where undefined)."""
+    if min(tp, fp, fn, tn) < 0:
+        raise ValueError(f"Confusion counts must be non-negative, got tp={tp} fp={fp} fn={fn} tn={tn}")
+    return {"sensitivity": _ratio(tp, tp + fn), "specificity": _ratio(tn, tn + fp), "precision": _ratio(tp, tp + fp),
+            "npv": _ratio(tn, tn + fn), "f1": _ratio(2 * tp, 2 * tp + fp + fn)}
+
+
+def macro_mean(per_class: Mapping[str, Mapping[str, Any]], classes: Sequence[str],
+               keys: Sequence[str] = THRESHOLD_METRICS) -> dict[str, float | None]:
+    """Unweighted mean of each metric over `classes`; None for a metric that is undefined for any of them."""
+    if not classes:
+        raise ValueError("A macro mean needs at least one class")
+    out: dict[str, float | None] = {}
+    for k in keys:
+        values = [per_class[c][k] for c in classes]
+        out[k] = None if any(v is None for v in values) else float(np.mean(values))
+    return out
+
+
+def operating_point_metrics(y_true: np.ndarray, y_prob: np.ndarray, classes: Sequence[str],
+                            thresholds: Mapping[str, float]) -> dict[str, Any]:
+    """Confusion counts and metrics per class at one threshold per class, and their macro mean.
+
+    thresholds maps class name -> threshold; a record is flagged when its probability is >= the threshold.
+    Classes without a threshold (NORM at the high-sensitivity operating point) are left out, and the macro
+    mean is over the classes that have one. Returns
+    {"classes": [scored classes, in class order],
+     "per_class": {class: {threshold, tp, fp, fn, tn, sensitivity, specificity, precision, npv, f1}},
+     "macro": {sensitivity, specificity, precision, npv, f1}}.
+    """
+    y_true, y_prob = validate_predictions(y_true, y_prob, classes)
+    unknown = sorted(set(thresholds) - set(classes))
+    if unknown:
+        raise ValueError(f"Thresholds given for unknown classes {unknown}; classes are {list(classes)}")
+    scored = [c for c in classes if c in thresholds]
+    if not scored:
+        raise ValueError("No thresholds given")
+    per_class: dict[str, dict[str, Any]] = {}
+    for c in scored:
+        threshold = float(thresholds[c])
+        if not np.isfinite(threshold):
+            raise ValueError(f"Threshold for {c} is {threshold}")
+        j = list(classes).index(c)
+        t, flagged = y_true[:, j] == 1, y_prob[:, j] >= threshold
+        tp, fp = int((flagged & t).sum()), int((flagged & ~t).sum())
+        fn, tn = int((~flagged & t).sum()), int((~flagged & ~t).sum())
+        per_class[c] = {"threshold": threshold, "tp": tp, "fp": fp, "fn": fn, "tn": tn} | counts_to_metrics(tp, fp, fn, tn)
+    return {"classes": scored, "per_class": per_class, "macro": macro_mean(per_class, scored)}
