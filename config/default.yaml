@@ -47,7 +47,25 @@ splits:                       # PTB-XL strat_fold, patient-stratified (spec sect
   test_folds: [10]
 
 labels:
-  superclasses: [NORM, MI, STTC, CD, HYP]
+  superclasses: [NORM, MI, STTC, CD, HYP]     # column order of the multi-hot label matrix
+  descriptions:
+    NORM: Normal ECG
+    MI: Myocardial infarction
+    STTC: ST/T change
+    CD: Conduction disturbance
+    HYP: Hypertrophy
+  # A diagnostic statement counts when its scp_codes likelihood is >= this. 0 keeps every one, as
+  # PhysioNet's example_physionet.py does; that reproduces PhysioNet's published counts exactly.
+  # Measured alternative: >= 15 removes 129 labels (127 of them STTC) and drops 13 more records.
+  min_likelihood: 0
+  # PhysioNet's published records per superclass for v1.0.3. Used only for the comparison table.
+  physionet_reference_counts: {NORM: 9514, MI: 5469, STTC: 5235, CD: 4898, HYP: 2649}
+
+norm_stats:                   # per-lead z-score statistics, training split only (spec section 2)
+  file: norm_stats.json       # in paths.cache_dir
+  std_ddof: 0                 # population std over all training samples of a lead
+  workers: 8                  # processes reading WFDB records in parallel
+  chunk_size: 64              # records per task sent to a worker
 
 preprocessing:
   bandpass:

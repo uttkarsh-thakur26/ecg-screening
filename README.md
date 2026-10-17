@@ -48,5 +48,19 @@ switch the GPU mode to Standard or Ultimate first.
 python -m src.data.download                # resumable; files already on disk are skipped
 python -m src.data.download --verify-only  # counts records and patients, checks every record file exists
 python -m src.data.inspect_record          # loads one record and writes reports/figures/sample_record.png
+python -m src.data.prepare                 # labels, patient-wise splits, train-only stats -> data/cache/norm_stats.json
 pytest
 ```
+
+### Labels and splits
+
+- **Labels.** Each record's `scp_codes` statements with `diagnostic == 1` in `scp_statements.csv` are mapped to their
+  `diagnostic_class`, as in PhysioNet's `example_physionet.py`. The result is multi-hot over NORM, MI, STTC, CD and HYP,
+  because one ECG can show several. This reproduces PhysioNet's published counts exactly (NORM 9,514, MI 5,469,
+  STTC 5,235, CD 4,898, HYP 2,649). 411 records carry only rhythm or form statements (mostly pacemaker, atrial
+  fibrillation and flutter) and are dropped, leaving 21,388.
+- **Splits.** PTB-XL's `strat_fold` keeps all of a patient's records in one fold: folds 1–8 train (17,084 records,
+  14,823 patients), fold 9 validation (2,146 / 1,917), fold 10 test (2,158 / 1,877). `assert_no_patient_leakage`
+  checks that no patient is in two splits.
+- **Normalisation.** Per-lead mean and std come from the training records only and are saved with their folds and a hash
+  of the exact `ecg_id`s used, so `tests/test_norm_stats.py` can recompute and compare them.
