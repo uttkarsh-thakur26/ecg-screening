@@ -134,6 +134,52 @@ evaluation:                   # spec section 4
   reliability_bins: 10
   high_sensitivity_target: 0.90
 
+baselines:                    # spec section 3, src/models/baselines.py; fit on the training split, scored on validation only
+  report_file: baselines_val.json   # in paths.reports_dir
+  workers: 8                  # processes extracting features in parallel
+  chunk_size: 128             # records per task sent to a worker
+  rpeaks:
+    # Pan-Tompkins-style QRS detector on one lead. Chosen on training records only, against two alternatives:
+    # wfdb's XQRS marked P and T waves at 100 Hz (up to 28 "beats" where there were 13) and wfdb's GQRS
+    # missed beats. All values below are Pan & Tompkins (1985) or were picked by the cross-lead agreement
+    # measured on 3,000 training records (lead II beat count within 1 of both lead I and V5: 95%).
+    lead: II                  # the standard rhythm lead
+    band_hz: [5.0, 15.0]      # QRS energy band (Pan & Tompkins); removes baseline wander and most of the P and T waves
+    filter_order: 2           # Butterworth order per pass; run forwards and backwards (zero-phase)
+    integration_window_s: 0.15    # moving-window integration of the squared slope, about one QRS width
+    refractory_s: 0.2         # no two beats closer than this (300 bpm)
+    # Signal level = median height of the highest third of the candidate peaks, and the threshold is a
+    # fraction of it. The median of a group follows the typical QRS, so one or two large ventricular
+    # ectopic beats no longer lift the threshold above the normal beats. A threshold from the global
+    # maximum missed every normal beat in 54 of those 3,000 records (PVC records); this misses none.
+    signal_level_top_fraction: 0.33
+    threshold_fraction: 0.3
+    # Pan & Tompkins' T-wave rule: a candidate within this time of the previous beat, with less than this
+    # share of its maximum slope, is a T wave.
+    twave_window_s: 0.36
+    twave_slope_ratio: 0.5
+    # Pan & Tompkins' search-back: an RR gap longer than this multiple of the median RR is searched again
+    # at this fraction of the threshold, and its highest candidate becomes a beat.
+    searchback_rr_ratio: 1.66
+    searchback_threshold_ratio: 0.5
+    peak_search_s: 0.075      # the beat is placed at the largest band-passed deflection within this of the integrated peak
+    min_rr_intervals: 2       # fewer RR intervals: the RR features are missing (NaN); gradient boosting handles NaN natively
+    rr_std_ddof: 1            # sample standard deviation of the RR intervals (SDNN)
+    # A quality check needing no annotations: the beat count on `lead` should match these other leads.
+    agreement_leads: [I, V5]
+    agreement_tolerance_beats: 1
+  gradient_boosting:          # sklearn HistGradientBoostingClassifier, one binary classifier per class
+    # sklearn's defaults, written out so the report records them. No tuning: the validation score stays an
+    # untouched estimate. early_stopping must stay false: sklearn's would hold out a random 10% of the
+    # training records, not patients, and all tuning belongs to the validation split.
+    learning_rate: 0.1
+    max_iter: 100
+    max_leaf_nodes: 31
+    min_samples_leaf: 20
+    l2_regularization: 0.0
+    max_bins: 255
+    early_stopping: false
+
 sample_plot:                  # src/data/inspect_record.py
   lead: II
   output: reports/figures/sample_record.png
