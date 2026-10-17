@@ -62,20 +62,53 @@ labels:
   physionet_reference_counts: {NORM: 9514, MI: 5469, STTC: 5235, CD: 4898, HYP: 2649}
 
 norm_stats:                   # per-lead z-score statistics, training split only (spec section 2)
-  file: norm_stats.json       # in paths.cache_dir
+  file: norm_stats.json       # in the preprocessing variant's cache folder (see cache)
   std_ddof: 0                 # population std over all training samples of a lead
   workers: 8                  # processes reading WFDB records in parallel
   chunk_size: 64              # records per task sent to a worker
 
-preprocessing:
+preprocessing:                # applied once, before caching and before computing norm_stats
   bandpass:
     enabled: false            # spec: implement, measure with and without, keep only if it helps
     low_hz: 0.5
     high_hz: 40.0
+    order: 2                  # Butterworth order per pass; forward-backward (zero-phase) filtering doubles it
 
-augmentation:                 # training split only
-  crop_window_s: 8
-  amplitude_scale: [0.8, 1.2]
+cache:                        # one-time arrays of every record, src/data/cache.py
+  # Each preprocessing variant gets its own folder in paths.cache_dir: "raw" with the band-pass off,
+  # e.g. "bandpass_0.5-40hz_order2" with it on. Both can exist side by side, each with its own norm_stats.
+  signals_file: signals.npy   # float32 (records, 12 leads, 1000 samples) in mV, rows in ecg_id order
+  labels_file: labels.npy     # uint8 (records, 5) multi-hot; all-zero rows are records without a superclass
+  index_file: index.csv       # ecg_id, patient_id, strat_fold, labelled, record_path; one row per array row
+  meta_file: meta.json        # written last, so its presence marks a complete build
+  workers: 8                  # processes reading WFDB records in parallel
+  chunk_size: 64              # records per task sent to a worker
+
+augmentation:                 # training split only; validation and test are never augmented
+  time_shift:
+    enabled: true
+    # Spec: "a random 8 s window from the 10 s, then pad". The record moves up to (10 - 8) s = 200 samples
+    # earlier or later, so at least 8 s of real signal remain; the vacated samples are set to 0, which
+    # after normalisation is the lead's training mean.
+    window_s: 8
+  amplitude_scale:
+    enabled: true
+    range: [0.8, 1.2]         # one factor per record, shared by all 12 leads; must stay > 0 (no sign inversion)
+  gaussian_noise:
+    enabled: true
+    # Standard deviation in normalised units, i.e. 0.05 x each lead's training std (about 7-17 microvolts
+    # here). That is well below the 0.1 mV ST-deviation criterion. A starting value; tune on fold 9 only.
+    sigma: 0.05
+
+dataloader:
+  # Worker processes per split. Measured on this laptop with src/data/inspect_pipeline.py: one training
+  # epoch loads in 2.9 s with 0 workers, 1.7 s with 2, 1.0 s with 4, plus about 7 s once to start them.
+  # Each Windows worker re-imports CUDA torch and commits about 1.8 GB of memory, and this laptop has
+  # about 10 GB of commit free, so: 2 for training, none for the small validation and test splits.
+  # Revisit once the GPU time per training step is measured.
+  num_workers: {train: 2, val: 0, test: 0}
+  pin_memory: true            # page-locked host memory for faster copies to the GPU
+  persistent_workers: true    # keep worker processes between epochs (only used when num_workers > 0)
 
 model:                        # 1D ResNet, spec section 3
   stem_channels: 64

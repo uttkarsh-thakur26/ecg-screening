@@ -6,7 +6,10 @@
 2. Print per-class counts next to PhysioNet's published figures.
 3. Assign folds 1-8 / 9 / 10 to train / val / test, check that no patient is in two splits, and
    print records and patients per split.
-4. Compute per-lead mean and std on the training split only and save them to data/cache/.
+4. Build the signal cache of every record once (src/data/cache.py), or check and reuse it.
+5. Compute per-lead mean and std on the training split only, after the configured preprocessing,
+   check every training record against its cache row, and save them to the preprocessing variant's
+   cache folder (data/cache/raw/ with the band-pass off).
 """
 
 from __future__ import annotations
@@ -21,6 +24,7 @@ import numpy as np
 import pandas as pd
 
 from src.config import DEFAULT_CONFIG_PATH, load_config, project_path
+from src.data.cache import open_cache
 from src.data.labels import Labels, build_labels, counts_table, read_statements
 from src.data.norm_stats import compute_norm_stats, norm_stats_path, save_norm_stats
 from src.data.records import read_database
@@ -100,16 +104,21 @@ def main(argv: list[str] | None = None) -> int:
     _print_splits(data)
     print()
 
+    cache = open_cache(cfg)
+    print(f"Signal cache {cache.dir}: signals {tuple(cache.signals.shape)} {cache.signals.dtype}, "
+          f"labels {tuple(cache.labels.shape)}, {cache.meta['n_labelled']:,} of {cache.meta['n_records']:,} labelled")
+    print()
+
     raw_dir = project_path(cfg["paths"]["raw_dir"])
-    stats = compute_norm_stats(cfg, raw_dir, data.labelled, data.ids("train"))
+    stats = compute_norm_stats(cfg, raw_dir, data.labelled, data.ids("train"), cache)
     path = norm_stats_path(cfg)
     save_norm_stats(stats, path)
-    print(f"Normalisation stats from {stats['n_records']:,} training records (folds {stats['folds']}), "
+    print(f"Normalisation stats ({stats['preprocessing']} signals) from {stats['n_records']:,} training records (folds {stats['folds']}), "
           f"{stats['n_samples_per_lead']:,} samples per lead")
     print(f"  {'Lead':<5} {'Mean (mV)':>10} {'Std (mV)':>9}")
     for lead, mean, std in zip(stats["leads"], stats["mean"], stats["std"]):
         print(f"  {lead:<5} {mean:>10.4f} {std:>9.4f}")
-    print(f"  saved {path}")
+    print(f"  every training record matches its cache row; saved {path}")
     return 0
 
 

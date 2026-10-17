@@ -15,6 +15,32 @@ import pandas as pd
 SPLITS = ("train", "val", "test")
 
 
+class TestSetLockedError(RuntimeError):
+    """Raised when code that has not declared itself the final evaluation asks for the test split."""
+
+    __test__ = False  # the name starts with "Test"; tell pytest this is not a test class
+
+
+def check_split_access(split: str, allow_test: bool) -> None:
+    """The test-split lock. Every API that selects a split's records calls this first.
+
+    Fold 10 is evaluated once, on the frozen model. Only the final evaluation and the frozen-model
+    demo may pass allow_test=True; it must be the bool True, so a string such as "False" from a
+    command line or environment variable cannot unlock it by being truthy.
+    """
+    if split not in SPLITS:
+        raise ValueError(f"split must be one of {SPLITS}, got {split!r}")
+    if not isinstance(allow_test, bool):
+        raise TypeError(f"allow_test must be True or False, got {allow_test!r} ({type(allow_test).__name__})")
+    if split == "test" and not allow_test:
+        raise TestSetLockedError(
+            "The test split (fold 10) is locked. It is evaluated once, on the frozen model, in the final "
+            "evaluation. Training and tuning (thresholds, temperature, hyperparameters, early stopping) must "
+            "use the validation split (fold 9). Only the final evaluation or the frozen-model demo may pass "
+            "allow_test=True."
+        )
+
+
 def fold_to_split(splits_cfg: dict[str, Any]) -> dict[int, str]:
     """{fold: split name} from the config; a fold may belong to one split only."""
     mapping: dict[int, str] = {}

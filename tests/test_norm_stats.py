@@ -7,12 +7,16 @@ from numpy.testing import assert_allclose
 
 from src.config import project_path
 from src.data.norm_stats import Moments, compute_moments, ecg_id_digest, load_norm_stats, norm_stats_path
+from src.data.cache import open_cache
+from src.data.preprocess import preprocessing_tag
 
 
 def _moments(cfg, data, ids):
     ds, ns = cfg["dataset"], cfg["norm_stats"]
     paths = data.labelled.loc[ids, ds["record_path_column"]].tolist()
-    return compute_moments(project_path(cfg["paths"]["raw_dir"]), paths, ds, ns["workers"], ns["chunk_size"], "test")
+    raw_dir = project_path(cfg["paths"]["raw_dir"])
+    leads, moments, _ = compute_moments(raw_dir, paths, ds, cfg["preprocessing"], ns["workers"], ns["chunk_size"], "test")
+    return leads, moments
 
 
 def test_normalisation_stats_from_train_only(cfg, data):
@@ -24,6 +28,8 @@ def test_normalisation_stats_from_train_only(cfg, data):
     assert stats["folds"] == [1, 2, 3, 4, 5, 6, 7, 8] == sorted(cfg["splits"]["train_folds"])
     assert stats["n_records"] == len(train_ids)
     assert stats["ecg_ids_sha256"] == ecg_id_digest(train_ids)
+    assert stats["preprocessing"] == preprocessing_tag(cfg)  # computed on the signals the model will see
+    assert stats["cache_signals_sha256"] == open_cache(cfg).meta["signals_sha256"]  # for exactly this cache
 
     # Recomputing on the training split reproduces the saved values.
     leads, train = _moments(cfg, data, train_ids)
