@@ -1,10 +1,10 @@
 {
   "description": "Per-class decision thresholds chosen on the validation split. Apply them unchanged to any other data, fold 10 included; never re-choose them there.",
   "generated_by": "python -m src.evaluation.evaluate_val",
-  "generated_at": "2026-10-17T18:17:27+00:00",
+  "generated_at": "2026-10-17T18:21:07+00:00",
   "git": {
-    "commit": "cb20e44469955cddfe56af1573c6200368518f4b",
-    "dirty": true
+    "commit": "6b87554e7486b452ed77e135663783810d2cdb08",
+    "dirty": false
   },
   "split": "val",
   "folds": [

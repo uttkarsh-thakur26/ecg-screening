@@ -1,10 +1,10 @@
 {
   "description": "Validation split only. Thresholds were chosen on these same records, so the thresholded metrics are optimistic; the unbiased estimate is the one-time fold-10 evaluation. AUROC and AUPRC are threshold-free but still optimistic by a little, because the checkpoint epoch was also chosen on this split.",
   "generated_by": "python -m src.evaluation.evaluate_val",
-  "generated_at": "2026-10-17T18:17:27+00:00",
+  "generated_at": "2026-10-17T18:21:07+00:00",
   "git": {
-    "commit": "cb20e44469955cddfe56af1573c6200368518f4b",
-    "dirty": true
+    "commit": "6b87554e7486b452ed77e135663783810d2cdb08",
+    "dirty": false
   },
   "split": "val",
   "folds": [
