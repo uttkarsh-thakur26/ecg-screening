@@ -8,6 +8,7 @@ paths:                      # relative to the repository root
   checkpoints_dir: checkpoints
   reports_dir: reports
   figures_dir: reports/figures
+  runs_dir: reports/runs     # one CSV (per-epoch log) and one JSON (config, commit, summary) per training run
 
 dataset:
   name: PTB-XL
@@ -114,21 +115,52 @@ model:                        # 1D ResNet, spec section 3
   stem_channels: 64
   stem_kernel: 7
   stem_stride: 2
+  # The spec names a max pool after the stem but not its size: kernel 3, stride 2 as in ResNet (He et al. 2016).
+  stem_pool_kernel: 3
+  stem_pool_stride: 2
   stage_channels: [64, 128, 256, 512]
   stage_strides: [1, 2, 2, 2]
   blocks_per_stage: 2
   block_kernel: 5
+  # The spec puts a Dropout between the two convolutions of each ResBlock without a rate. 0.2 is the rate
+  # Ribeiro et al. (2020) use in the same position of their 12-lead ECG ResNet. A starting value; tune on fold 9 only.
+  block_dropout: 0.2
   head_dropout: 0.3
 
 training:                     # spec section 3
   batch_size: 64              # RTX 3050 Laptop has 4 GB VRAM; never above 64
   optimizer: adamw
   lr: 1.0e-3
-  weight_decay: 1.0e-2
+  weight_decay: 1.0e-2        # AdamW's decoupled weight decay, applied to every parameter
+  # Spec: "1e-3, OneCycle or cosine schedule with warmup". Per optimiser step: linear warmup from lr/warmup_steps
+  # to lr over warmup_epochs, then cosine decay to min_lr_ratio x lr at max_epochs. The schedule always spans
+  # max_epochs, so a run that stops early stops part-way down the cosine.
+  lr_schedule: warmup_cosine
+  warmup_epochs: 2            # about 535 steps at batch 64; a starting value, not tuned
+  min_lr_ratio: 0.0
   max_epochs: 50
   early_stopping_metric: val_macro_auroc
-  early_stopping_patience: 8
+  early_stopping_patience: 8  # stop after this many epochs without a new best
+  early_stopping_min_delta: 0.0   # any increase in validation macro AUROC counts as a new best
   seed: 42
+  device: cuda                # train.py refuses to start without CUDA instead of quietly training on the CPU
+  # Deterministic cuDNN and cuBLAS kernels: the same seed and config give the same weights, so two runs that
+  # differ in one setting differ only because of it. Costs some speed.
+  deterministic: true
+  overfit:                    # sanity check of the training loop: python -m src.training.train --overfit
+    n_samples: 50             # training records, drawn with seed; augmentation off
+    epochs: 300               # 50 records fit in one batch, so one optimiser step per epoch
+    # Pass criterion: mean BCE (with pos_weight) on the 50 records, in eval mode, at the end. 0.01 is a mean
+    # predicted probability of about 0.99 for every true label and 0.01 for every absent one.
+    max_loss: 0.01
+
+comparison:                   # src/training/compare_runs.py: two runs' best checkpoints on the validation split
+  # Paired bootstrap: each resample draws validation patients with replacement (all of a patient's records come
+  # together, because records of one patient are not independent) and scores both runs on the same records.
+  bootstrap_samples: 2000
+  ci_level: 0.95
+  # The best checkpoint must reproduce the validation metrics logged for its epoch to within this.
+  reproduce_tolerance: 1.0e-6
 
 evaluation:                   # spec section 4
   reliability_bins: 10

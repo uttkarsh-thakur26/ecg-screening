@@ -17,6 +17,10 @@ Both change the clinical meaning, so the label would no longer be true of the au
 All randomness comes from torch, so one mechanism controls both shuffling and augmentation: in
 DataLoader worker processes torch's RNG is seeded from the loader's generator, and without workers
 the Dataset passes its own generator seeded from training.seed (src/data/dataset.py).
+
+Every transform draws its random numbers whether or not it is enabled, always in the same order.
+Turning one transform off therefore leaves the draws of the others unchanged, so an ablation run
+with the same seed differs from the full run only in the transform it removes.
 """
 
 from __future__ import annotations
@@ -88,13 +92,17 @@ class Augmenter:
         return ", ".join(parts) if parts else "none enabled"
 
     def __call__(self, x: torch.Tensor, generator: torch.Generator | None = None) -> torch.Tensor:
+        # Drawn in this order every time, used only by the enabled transforms (see the module docstring).
+        u_scale = torch.rand((), generator=generator).item()
+        noise = torch.randn(x.shape, generator=generator, dtype=x.dtype)
+        u_shift = torch.rand((), generator=generator).item()
         if self.scale_range is not None:
             low, high = self.scale_range
-            factor = low + (high - low) * torch.rand((), generator=generator).item()
-            x = x * factor
+            x = x * (low + (high - low) * u_scale)
         if self.noise_sigma is not None:
-            x = x + self.noise_sigma * torch.randn(x.shape, generator=generator, dtype=x.dtype)
+            x = x + self.noise_sigma * noise
         if self.max_shift is not None:
-            shift = int(torch.randint(-self.max_shift, self.max_shift + 1, (), generator=generator).item())
+            # u_shift is in [0, 1), so this is a whole number from -max_shift to +max_shift, each equally likely.
+            shift = int(u_shift * (2 * self.max_shift + 1)) - self.max_shift
             x = time_shift(x, shift)
         return x

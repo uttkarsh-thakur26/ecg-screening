@@ -90,6 +90,35 @@ def test_same_seed_same_augmentation(cfg):
     assert not torch.equal(a(x, torch.Generator().manual_seed(7)), a(x, torch.Generator().manual_seed(8)))
 
 
+@pytest.mark.parametrize("off", ["amplitude_scale", "gaussian_noise", "time_shift"])
+def test_turning_one_transform_off_leaves_the_others_draws_unchanged(cfg, off):
+    aug = copy.deepcopy(cfg["augmentation"])
+    for key in aug:
+        aug[key]["enabled"] = True  # independent of which flags the committed config turns on
+    full = Augmenter(aug, FS, SAMPLES)
+    aug[off]["enabled"] = False
+    ablated = Augmenter(aug, FS, SAMPLES)
+    x = torch.zeros(LEADS, SAMPLES)
+    x[:, SAMPLES // 2] = 1.0  # an impulse in every lead: its position after the transforms reveals the shift
+    for seed in range(20):
+        a = full(x, torch.Generator().manual_seed(seed))
+        b = ablated(x, torch.Generator().manual_seed(seed))
+        g = torch.Generator().manual_seed(seed)
+        u_scale = torch.rand((), generator=g).item()
+        noise = torch.randn(x.shape, generator=g)
+        u_shift = torch.rand((), generator=g).item()
+        low, high = cfg["augmentation"]["amplitude_scale"]["range"]
+        factor = low + (high - low) * u_scale
+        sigma = cfg["augmentation"]["gaussian_noise"]["sigma"]
+        max_shift = full.max_shift
+        shift = int(u_shift * (2 * max_shift + 1)) - max_shift
+        scaled = x if off == "amplitude_scale" else x * factor
+        noisy = scaled if off == "gaussian_noise" else scaled + sigma * noise
+        expected = noisy if off == "time_shift" else time_shift(noisy, shift)
+        torch.testing.assert_close(b, expected, rtol=0, atol=1e-6)
+        assert not torch.equal(a, b)  # the removed transform did change the record
+
+
 @pytest.mark.parametrize(
     "key, change",
     [
