@@ -1,0 +1,337 @@
+{
+  "description": "Baselines fit on the train split and scored on the val split only (PROJECT_SPEC.md section 3). No setting was tuned against labels or the validation split: scikit-learn's default gradient boosting, and beat-detector settings chosen on training records with a label-free cross-lead check. The test split was not opened.",
+  "generated_by": "python -m src.models.baselines",
+  "generated_at": "2026-10-17T12:44:07+00:00",
+  "git": {
+    "commit": "af36fd8e30c8ad609142ad7d75df726c888cfe9f",
+    "dirty": false
+  },
+  "seed": 42,
+  "dataset": {
+    "name": "PTB-XL",
+    "version": "1.0.3",
+    "sampling_rate_hz": 100,
+    "preprocessing": "raw"
+  },
+  "classes": [
+    "NORM",
+    "MI",
+    "STTC",
+    "CD",
+    "HYP"
+  ],
+  "splits": {
+    "train": {
+      "folds": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8
+      ],
+      "records": 17084,
+      "patients": 14823,
+      "positives": {
+        "NORM": 7596,
+        "MI": 4379,
+        "STTC": 4186,
+        "CD": 3907,
+        "HYP": 2119
+      },
+      "prevalence": {
+        "NORM": 0.44462655115897914,
+        "MI": 0.25632170451884806,
+        "STTC": 0.2450245844064622,
+        "CD": 0.22869351439943808,
+        "HYP": 0.12403418403184266
+      }
+    },
+    "val": {
+      "folds": [
+        9
+      ],
+      "records": 2146,
+      "patients": 1917,
+      "positives": {
+        "NORM": 955,
+        "MI": 540,
+        "STTC": 528,
+        "CD": 495,
+        "HYP": 268
+      },
+      "prevalence": {
+        "NORM": 0.4450139794967381,
+        "MI": 0.2516309412861137,
+        "STTC": 0.24603914259086673,
+        "CD": 0.23066169617893756,
+        "HYP": 0.12488350419384903
+      }
+    }
+  },
+  "baselines": {
+    "prior": {
+      "description": "Every record scored with each class's train-split frequency",
+      "scores": {
+        "NORM": 0.44462655115897914,
+        "MI": 0.25632170451884806,
+        "STTC": 0.2450245844064622,
+        "CD": 0.22869351439943808,
+        "HYP": 0.12403418403184266
+      },
+      "metrics": {
+        "per_class": {
+          "NORM": {
+            "auroc": 0.5,
+            "auprc": 0.4450139794967381,
+            "n_positive": 955,
+            "n_negative": 1191,
+            "prevalence": 0.4450139794967381
+          },
+          "MI": {
+            "auroc": 0.5,
+            "auprc": 0.2516309412861137,
+            "n_positive": 540,
+            "n_negative": 1606,
+            "prevalence": 0.2516309412861137
+          },
+          "STTC": {
+            "auroc": 0.5,
+            "auprc": 0.24603914259086673,
+            "n_positive": 528,
+            "n_negative": 1618,
+            "prevalence": 0.24603914259086673
+          },
+          "CD": {
+            "auroc": 0.5,
+            "auprc": 0.23066169617893756,
+            "n_positive": 495,
+            "n_negative": 1651,
+            "prevalence": 0.23066169617893756
+          },
+          "HYP": {
+            "auroc": 0.5,
+            "auprc": 0.12488350419384903,
+            "n_positive": 268,
+            "n_negative": 1878,
+            "prevalence": 0.12488350419384903
+          }
+        },
+        "macro": {
+          "auroc": 0.5,
+          "auprc": 0.259645852749301,
+          "prevalence": 0.259645852749301
+        }
+      }
+    },
+    "feature_gbdt": {
+      "description": "79 features per record (RR intervals from lead II beats, plus per-lead amplitude statistics), one gradient-boosted tree classifier per class",
+      "model": "sklearn.ensemble.HistGradientBoostingClassifier",
+      "sklearn_version": "1.9.1",
+      "params": {
+        "learning_rate": 0.1,
+        "max_iter": 100,
+        "max_leaf_nodes": 31,
+        "min_samples_leaf": 20,
+        "l2_regularization": 0.0,
+        "max_bins": 255,
+        "early_stopping": false,
+        "random_state": 42
+      },
+      "fit_seconds": 3.8,
+      "features": [
+        "n_beats",
+        "heart_rate_bpm",
+        "rr_mean_s",
+        "rr_std_s",
+        "rr_min_s",
+        "rr_max_s",
+        "rr_rmssd_s",
+        "I_mean",
+        "I_std",
+        "I_min",
+        "I_max",
+        "I_skew",
+        "I_kurtosis",
+        "II_mean",
+        "II_std",
+        "II_min",
+        "II_max",
+        "II_skew",
+        "II_kurtosis",
+        "III_mean",
+        "III_std",
+        "III_min",
+        "III_max",
+        "III_skew",
+        "III_kurtosis",
+        "AVR_mean",
+        "AVR_std",
+        "AVR_min",
+        "AVR_max",
+        "AVR_skew",
+        "AVR_kurtosis",
+        "AVL_mean",
+        "AVL_std",
+        "AVL_min",
+        "AVL_max",
+        "AVL_skew",
+        "AVL_kurtosis",
+        "AVF_mean",
+        "AVF_std",
+        "AVF_min",
+        "AVF_max",
+        "AVF_skew",
+        "AVF_kurtosis",
+        "V1_mean",
+        "V1_std",
+        "V1_min",
+        "V1_max",
+        "V1_skew",
+        "V1_kurtosis",
+        "V2_mean",
+        "V2_std",
+        "V2_min",
+        "V2_max",
+        "V2_skew",
+        "V2_kurtosis",
+        "V3_mean",
+        "V3_std",
+        "V3_min",
+        "V3_max",
+        "V3_skew",
+        "V3_kurtosis",
+        "V4_mean",
+        "V4_std",
+        "V4_min",
+        "V4_max",
+        "V4_skew",
+        "V4_kurtosis",
+        "V5_mean",
+        "V5_std",
+        "V5_min",
+        "V5_max",
+        "V5_skew",
+        "V5_kurtosis",
+        "V6_mean",
+        "V6_std",
+        "V6_min",
+        "V6_max",
+        "V6_skew",
+        "V6_kurtosis"
+      ],
+      "rpeak_detector": {
+        "lead": "II",
+        "band_hz": [
+          5.0,
+          15.0
+        ],
+        "filter_order": 2,
+        "integration_window_s": 0.15,
+        "refractory_s": 0.2,
+        "signal_level_top_fraction": 0.33,
+        "threshold_fraction": 0.3,
+        "twave_window_s": 0.36,
+        "twave_slope_ratio": 0.5,
+        "searchback_rr_ratio": 1.66,
+        "searchback_threshold_ratio": 0.5,
+        "peak_search_s": 0.08,
+        "min_rr_intervals": 2,
+        "rr_std_ddof": 1,
+        "agreement_leads": [
+          "I",
+          "V5"
+        ],
+        "agreement_tolerance_beats": 1
+      },
+      "feature_extraction": {
+        "train": {
+          "seconds": 21.7,
+          "beats_per_record": {
+            "min": 6,
+            "p1": 8.0,
+            "median": 12.0,
+            "p99": 23.0,
+            "max": 37
+          },
+          "records_without_rr_features": 0,
+          "undefined_lead_statistics": 2,
+          "beat_count_agreement": {
+            "tolerance_beats": 1,
+            "per_lead": {
+              "I": 0.9661671739639429,
+              "V5": 0.9748887848279092
+            },
+            "all_leads": 0.9610746897682042
+          }
+        },
+        "val": {
+          "seconds": 7.9,
+          "beats_per_record": {
+            "min": 6,
+            "p1": 7.0,
+            "median": 12.0,
+            "p99": 23.0,
+            "max": 33
+          },
+          "records_without_rr_features": 0,
+          "undefined_lead_statistics": 0,
+          "beat_count_agreement": {
+            "tolerance_beats": 1,
+            "per_lead": {
+              "I": 0.9599254426840633,
+              "V5": 0.972972972972973
+            },
+            "all_leads": 0.9529356943150047
+          }
+        }
+      },
+      "metrics": {
+        "per_class": {
+          "NORM": {
+            "auroc": 0.8885867391122777,
+            "auprc": 0.8563629825752566,
+            "n_positive": 955,
+            "n_negative": 1191,
+            "prevalence": 0.4450139794967381
+          },
+          "MI": {
+            "auroc": 0.8276128868594622,
+            "auprc": 0.6368229432400023,
+            "n_positive": 540,
+            "n_negative": 1606,
+            "prevalence": 0.2516309412861137
+          },
+          "STTC": {
+            "auroc": 0.8284615312581938,
+            "auprc": 0.6020396232054172,
+            "n_positive": 528,
+            "n_negative": 1618,
+            "prevalence": 0.24603914259086673
+          },
+          "CD": {
+            "auroc": 0.8495702023261079,
+            "auprc": 0.7418958707271649,
+            "n_positive": 495,
+            "n_negative": 1651,
+            "prevalence": 0.23066169617893756
+          },
+          "HYP": {
+            "auroc": 0.8857469839301894,
+            "auprc": 0.6277194619396719,
+            "n_positive": 268,
+            "n_negative": 1878,
+            "prevalence": 0.12488350419384903
+          }
+        },
+        "macro": {
+          "auroc": 0.8559956686972461,
+          "auprc": 0.6929681763375026,
+          "prevalence": 0.259645852749301
+        }
+      }
+    }
+  }
+}
