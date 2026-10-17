@@ -1,10 +1,10 @@
 {
   "description": "Per-class decision thresholds chosen on the validation split, on CALIBRATED probabilities (post-calibration). Apply the calibration in reports/calibration.json first, then these thresholds, both unchanged, to any other data, fold 10 included; never re-choose them there.",
   "generated_by": "python -m src.training.calibrate",
-  "generated_at": "2026-10-17T19:06:47+00:00",
+  "generated_at": "2026-10-17T19:10:53+00:00",
   "git": {
-    "commit": "6bfde8358476260aa573dfccd6c47826a606b767",
-    "dirty": true
+    "commit": "dd5ea0df06cc997dd2736eb93312673ebd071b44",
+    "dirty": false
   },
   "split": "val",
   "folds": [
@@ -27,7 +27,7 @@
   "post_calibration": true,
   "calibration": {
     "file": "reports/calibration.json",
-    "sha256": "8b3374c60b68dec5214e1cd1950bb17a2b8dc3bc5f1950b46aa131f0958be097",
+    "sha256": "04fbf9eada05186352ea82401ee7b2f3ff0b1d8106da07e0a549ee34ccae38c4",
     "per_class": {
       "NORM": {
         "method": "temperature",

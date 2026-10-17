@@ -1,10 +1,10 @@
 {
   "description": "Per-class probability calibration, fitted and chosen on the validation split. Apply p = sigmoid(a * logit + b) with each class's 'calibrator' before any threshold in thresholds.json. Optimistic: the calibrators were fitted and chosen on these same fold-9 records, and Platt (two parameters) contains temperature scaling, so the calibrated ECE here flatters it most. The honest ECE comes from fold 10, scored once in the final evaluation with these calibrators frozen.",
   "generated_by": "python -m src.training.calibrate",
-  "generated_at": "2026-10-17T19:06:45+00:00",
+  "generated_at": "2026-10-17T19:10:51+00:00",
   "git": {
-    "commit": "6bfde8358476260aa573dfccd6c47826a606b767",
-    "dirty": true
+    "commit": "dd5ea0df06cc997dd2736eb93312673ebd071b44",
+    "dirty": false
   },
   "split": "val",
   "folds": [

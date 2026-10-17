@@ -1,10 +1,10 @@
 {
   "description": "Validation split only. The calibration and the thresholds were chosen on these same records, so the thresholded metrics are optimistic; the unbiased estimate is the one-time fold-10 evaluation. AUROC and AUPRC are threshold-free and unchanged by calibration, but still optimistic by a little, because the checkpoint epoch was also chosen on this split.",
   "generated_by": "python -m src.training.calibrate",
-  "generated_at": "2026-10-17T19:06:47+00:00",
+  "generated_at": "2026-10-17T19:10:53+00:00",
   "git": {
-    "commit": "6bfde8358476260aa573dfccd6c47826a606b767",
-    "dirty": true
+    "commit": "dd5ea0df06cc997dd2736eb93312673ebd071b44",
+    "dirty": false
   },
   "split": "val",
   "folds": [
@@ -27,7 +27,7 @@
   "post_calibration": true,
   "calibration": {
     "file": "reports/calibration.json",
-    "sha256": "8b3374c60b68dec5214e1cd1950bb17a2b8dc3bc5f1950b46aa131f0958be097",
+    "sha256": "04fbf9eada05186352ea82401ee7b2f3ff0b1d8106da07e0a549ee34ccae38c4",
     "per_class": {
       "NORM": {
         "method": "temperature",
