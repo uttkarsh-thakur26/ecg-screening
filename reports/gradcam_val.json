@@ -1,10 +1,10 @@
 {
   "description": "Grad-CAM (PROJECT_SPEC.md section 5) on validation records only: the model parameter randomisation check and example overlays. The maps show which time positions raised the class's raw logit; they are not a clinical rationale.",
   "generated_by": "python -m src.explain.gradcam_val",
-  "generated_at": "2026-10-18T04:38:05+00:00",
+  "generated_at": "2026-10-18T04:42:12+00:00",
   "git": {
-    "commit": "d0cb8db21df2d86e31011d49795ec13c809b5811",
-    "dirty": true
+    "commit": "ac435b50a0078b2b0e990d2cd3b6d5dbeeb9525f",
+    "dirty": false
   },
   "split": "val",
   "folds": [
