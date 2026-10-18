@@ -331,3 +331,97 @@ ECE also never reaches 0 on finite data. Each bin's observed frequency is a prop
 records, with a standard error of several percentage points in the sparse middle bins, so even a perfectly calibrated
 model scores above zero. The fold-10 ECE should therefore be read against the uncalibrated values, not against 0, and
 differences of a few thousandths (NORM: 0.0183 vs 0.0185) are noise.
+
+## Explainability: 1D Grad-CAM (validation only)
+
+```powershell
+python -m src.explain.gradcam_val         # about 20 s; randomisation check, example overlays, reports/gradcam_val.json
+```
+
+`src/explain/gradcam1d.py` implements Grad-CAM (Selvaraju et al., 2017) for one class at a time:
+
+1. A forward hook on the last residual stage captures its output A: 512 channels at 32 time positions.
+2. The gradient of the class's **raw logit** with respect to A.
+3. Channel weights: each channel's gradient averaged over the 32 positions.
+4. CAM = ReLU(weighted sum of the channels): 32 values.
+5. Linear interpolation to the 1000 input samples.
+6. Division by the maximum, so the peak is 1 and the values lie in [0, 1].
+
+- **Time alignment.** Every convolution and the max pool use "same" padding with odd kernels, so feature position j
+  is centred on input sample 32·j (0, 32, …, 992). `feature_geometry` derives this from the layers, and a test checks it
+  against the input gradient: for each position whose receptive field fits inside the record, exactly the samples
+  32·j ± 429 reach it. The interpolation runs between those centres, so the band lines up with the waveform.
+  `F.interpolate` (align_corners=False) would place position j at sample 31.25·j + 15.1 and misplace the band by up
+  to 0.15 s.
+- **Resolution.** The map has one value every 0.32 s. Each value's receptive field spans 859 samples (8.6 s of the
+  10 s record), although in deep CNNs the samples near the centre usually carry most of the weight (the "effective
+  receptive field", Luo et al., 2016; not measured here). The band shows roughly *when* in the record the evidence
+  was strongest. It cannot point to one beat or one wave.
+- **This is CAM.** The head is global average pooling and one linear layer, so the gradient at every position is
+  w_c / 32 and the channel weights are the classifier's own weights. The map before the ReLU sums exactly to
+  logit − bias. It splits the logit into 32 additive shares, one per time position. A test checks this identity.
+- **Division by the maximum, not min–max.** After the ReLU, 0 means "adds nothing to the class score". Dividing by
+  the peak keeps that meaning, and a nearly flat map stays flat instead of being stretched to full contrast. A
+  map with no positive value anywhere stays all zero.
+- **Calibration does not change the map.** Calibration turns the logit into a·logit + b with a > 0. The gradient
+  is multiplied by a, ReLU(a·s) = a·ReLU(s), interpolation is linear, and step 6 divides a out again. b is a
+  constant and has no gradient. On the five records below, the calibrated logit's map matches the raw logit's to
+  1.3e-7 (float32), and the un-normalised peaks differ by exactly a. With a < 0 the ReLU would keep the opposite
+  regions, one reason the calibrators require a > 0.
+
+### Randomisation sanity check (Adebayo et al., 2018)
+
+A map that barely changes when the trained weights are replaced with random ones reflects the input, not what the
+model learned. One validation record per class was drawn at random from that class's true positives at the max-F1
+threshold. Each record's map of that class was computed by the trained model and by three randomly initialised
+models of the same architecture (init seeds 0, 1, 2). The pass criterion's limit was fixed in the config before any
+map was computed: for every random model, the mean |Spearman ρ| between trained and random maps must be below 0.5.
+The limit bounds the average, not each record.
+
+| ecg_id | Map of | Labels | Calibrated P | Spearman ρ, seeds 0 / 1 / 2 | Pearson r, seeds 0 / 1 / 2 |
+|---:|---|---|---:|---|---|
+| 1379 | NORM | NORM | 0.577 | −0.29 / +0.20 / +0.09 | −0.29 / +0.09 / −0.01 |
+| 16373 | MI | MI | 0.830 | all zero / −0.14 / +0.17 | all zero / −0.18 / +0.15 |
+| 13720 | STTC | STTC | 0.509 | +0.28 / all zero / +0.60 | +0.39 / all zero / +0.72 |
+| 8684 | CD | MI, CD, HYP | 0.920 | all zero / −0.20 / −0.10 | all zero / −0.25 / −0.01 |
+| 7945 | HYP | STTC, CD, HYP | 0.581 | +0.03 / +0.20 / −0.04 | +0.03 / +0.27 / −0.04 |
+| **Mean \|ρ\|, \|r\|, defined pairs** | | | | **0.20 / 0.18 / 0.20** (n = 3 / 4 / 5) | 0.24 / 0.20 / 0.19 |
+| Mean, all-zero maps counted as 0 | | | | 0.12 / 0.15 / 0.20 | 0.14 / 0.16 / 0.19 |
+
+**Pass.** The trained and random maps share little. "All zero" means the random model has no time position that
+raises that class's logit, so its map is empty and no correlation exists. The criterion did not anticipate empty
+maps. After the first run produced 3 of 15, the config gained an explicit rule (`undefined_correlations: exclude`):
+leave them out of the mean. That is always the stricter choice, because counting them as ρ = 0 can only lower the
+mean. The verdict is PASS under both rules, and seed 0's mean rests on 3 records. The highest single value is 13720
+against seed 2 (ρ 0.60). Both maps are broad, with small ups and downs in similar places. A random
+network still responds to the waveform's own structure, and that input-driven part of a map is what this check
+exposes. On average it is small here. `reports/figures/gradcam_randomisation_val.png` shows every map in the table.
+
+### Example overlays
+
+Per class, the overlay uses the single-label validation record that has all five decisions correct at the max-F1
+thresholds and the highest calibrated probability for the class. These are **best cases, not typical ones**, and each
+figure says so. Each figure draws lead II on ECG paper with the band behind it, ticks at the 32 position centres, and
+the caption "model attention — not a clinical rationale": `reports/figures/gradcam_example_{MI,STTC,CD}_val.png`.
+
+| Class | ecg_id | Calibrated P (max-F1 threshold) | Other classes, calibrated | Highest of |
+|---|---:|---:|---|---:|
+| MI | 17976 | 0.996 (0.367) | NORM 0.00, STTC 0.02, CD 0.01, HYP 0.00 | 104 eligible |
+| STTC | 3884 | 0.966 (0.373) | NORM 0.01, MI 0.07, CD 0.04, HYP 0.14 | 129 eligible |
+| CD | 18611 | 0.996 (0.357) | NORM 0.01, MI 0.06, STTC 0.01, HYP 0.19 | 95 eligible |
+
+All three maps are broad. Most of the record raises the logit, with mild peaks, and the values drop over the last
+half second or so. Broad maps fit the 8.6 s receptive fields and the pooling head. The maps cannot tell whether
+the evidence really is spread over the recording or whether the wide receptive fields blur it. The dim ends are
+partly a boundary effect: the first and last positions' receptive fields reach past the record into zero padding.
+
+**What the map shows, and what it does not.** It shows which 0.32 s time positions of the last stage's features
+raised the raw logit of one class, relative to the record's strongest position. It does not show:
+- which lead carried the evidence (the map is shared by all 12 leads and only drawn behind lead II);
+- which wave or interval mattered (the receptive fields are 8.6 s wide);
+- evidence against the class (the ReLU removes negative contributions);
+- how strong the evidence is compared with another record (each map is scaled to its own peak);
+- whether the first or last half second mattered less (near the ends the receptive fields include zero padding);
+- that the model learned correct physiology, or any clinical reason for a prediction.
+
+It is a debugging and trust aid. These maps come from validation records; fold 10 has not been opened.

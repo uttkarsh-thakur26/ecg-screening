@@ -203,6 +203,49 @@ calibration:                  # src/training/calibrate.py; fitted and chosen on 
   # by floating-point rounding only.
   ranking_tolerance: 1.0e-12
 
+explain:                      # Grad-CAM, spec section 5; src/explain/gradcam_val.py uses the validation split only
+  report_file: gradcam_val.json   # in paths.reports_dir
+  lead: II                    # drawn under the band; the map is per time position, shared by all 12 leads
+  # Grad-CAM's own forward pass (one record at a time) must give the logits evaluate_val's prediction gave
+  # (batches of training.batch_size) to within this. cuDNN runs convolutions in TF32 by default on this GPU and
+  # picks its kernel by batch size. Measured on all 2,146 validation records: batch 64 reproduces the logits
+  # exactly; batch 1 differs by up to 1.9e-3, batch 5 by up to 4.2e-3 (logits reach +/-18); with TF32 off the
+  # batch sizes differ by 1.6e-5. A different model or record differs by 0.1 to 10.
+  logit_tolerance: 1.0e-2
+  randomisation:              # model parameter randomisation test (Adebayo et al., 2018)
+    # One validation record per class, drawn with draw_seed from that class's true positives at the max-F1
+    # operating point (so the trained model detects the class, but how confidently plays no part in the draw).
+    # The target class of each record's map is the class it was drawn for.
+    draw_seed: 42
+    # Randomly initialised models: build_model's He initialisation after torch.manual_seed(seed), in eval mode,
+    # BatchNorm at its initial running statistics. Same architecture, no training.
+    init_seeds: [0, 1, 2]
+    # Pass criterion, fixed before any map was computed: for every random initialisation, the mean over the
+    # drawn records of |Spearman rank correlation| between the trained and the random model's map is below
+    # this. It bounds the average only: a single record can exceed it. Spearman is the similarity Adebayo et al.
+    # report; Pearson is reported next to it.
+    max_mean_abs_spearman: 0.5
+    # How a constant random map (all zero: no position raises the class's logit) enters that mean. A constant
+    # map has no correlation with anything. The criterion above did not anticipate this; the first run produced
+    # 3 such maps out of 15, and this rule was added afterwards. "exclude" averages the defined correlations
+    # only; "zero" counts an empty map as rho = 0. Excluding is always the stricter of the two (it drops zeros
+    # from the mean). Both means are reported; the verdict uses this one.
+    undefined_correlations: exclude
+  examples:                   # one overlay per class
+    classes: [MI, STTC, CD]
+    # Per class: among validation records whose only label is the class and whose five decisions at the max-F1
+    # thresholds are all correct, the one with the highest calibrated probability for the class.
+    operating_point: max_f1
+  figures:                    # in paths.figures_dir; dpi from evaluation.figures
+    randomisation: gradcam_randomisation_val.png
+    example: gradcam_example_{cls}_val.png
+    example_width_in: 14
+    # Lead II is drawn at ECG paper proportions (sample_plot: 25 mm/s, 10 mm/mV), at least this many mV tall,
+    # so a low-amplitude record is not squeezed into a thin strip. 3 mV = 30 mm, about one rhythm-strip row.
+    min_height_mv: 3.0
+    randomisation_panel_in: [4.6, 1.5]   # width and height of one record's panel; one column per model
+    band_alpha: 0.6           # opacity of the band where the map is 1; it is transparent where the map is 0
+
 baselines:                    # spec section 3, src/models/baselines.py; fit on the training split, scored on validation only
   report_file: baselines_val.json   # in paths.reports_dir
   workers: 8                  # processes extracting features in parallel

@@ -1,0 +1,380 @@
+{
+  "description": "Grad-CAM (PROJECT_SPEC.md section 5) on validation records only: the model parameter randomisation check and example overlays. The maps show which time positions raised the class's raw logit; they are not a clinical rationale.",
+  "generated_by": "python -m src.explain.gradcam_val",
+  "generated_at": "2026-10-18T04:38:05+00:00",
+  "git": {
+    "commit": "d0cb8db21df2d86e31011d49795ec13c809b5811",
+    "dirty": true
+  },
+  "split": "val",
+  "folds": [
+    9
+  ],
+  "records": 2146,
+  "ecg_ids_sha256": "87475dc96b15c6c41dde24640470b4955b19134d425cc03e269642147d9ac8e5",
+  "model": {
+    "run_id": "20261017-215633_no-amp-scale",
+    "checkpoint": "checkpoints/20261017-215633_no-amp-scale/best.pt",
+    "best_epoch": 19,
+    "seed": 42,
+    "training_commit": "46330c162bb2ba7aede503283be3e4f3553e59c3",
+    "overrides": [
+      "augmentation.amplitude_scale.enabled=false"
+    ]
+  },
+  "gradcam": {
+    "target_layer": "model.stages[-1] (output of the last residual stage)",
+    "target": "raw logit of the class, before sigmoid and calibration",
+    "channel_weights": "mean of d logit / d A over time",
+    "normalisation": "ReLU, linear interpolation between feature-position centres, then division by the maximum",
+    "feature_positions": 32,
+    "position_spacing_samples": 32.0,
+    "first_centre_sample": 0.0,
+    "receptive_field_samples": 859,
+    "sampling_rate_hz": 100
+  },
+  "randomisation_check": {
+    "reference": "Adebayo et al. (2018), Sanity checks for saliency maps, NeurIPS: model parameter randomisation",
+    "record_selection": "one distinct record per class, drawn uniformly (seed 42) from that class's true positives at the max-F1 threshold",
+    "random_models": "build_model after torch.manual_seed(seed) for seeds [0, 1, 2], eval mode",
+    "criterion": "for every random initialisation, mean |Spearman rho| over the records < 0.5 (this limit was fixed in config/default.yaml before any map was computed)",
+    "undefined_correlations": {
+      "rule": "exclude",
+      "meaning": "a random map that is all zero (constant) has no correlation; 'exclude' leaves it out of the mean, 'zero' counts it as rho = 0. Added after the first run produced such maps; 'exclude' is always the stricter.",
+      "passed_under_other_rule": true
+    },
+    "passed": true,
+    "per_seed": {
+      "0": {
+        "records": 5,
+        "mean_abs_spearman": {
+          "exclude": 0.19742333696370087,
+          "zero": 0.11845400217822052
+        },
+        "defined": 3,
+        "mean_abs_pearson": {
+          "exclude": 0.2371270627349119,
+          "zero": 0.14227623764094716
+        },
+        "passed": true
+      },
+      "1": {
+        "records": 5,
+        "mean_abs_spearman": {
+          "exclude": 0.18262935665178345,
+          "zero": 0.14610348532142675
+        },
+        "defined": 4,
+        "mean_abs_pearson": {
+          "exclude": 0.19625141156312553,
+          "zero": 0.15700112925050042
+        },
+        "passed": true
+      },
+      "2": {
+        "records": 5,
+        "mean_abs_spearman": {
+          "exclude": 0.1996154599931613,
+          "zero": 0.1996154599931613
+        },
+        "defined": 5,
+        "mean_abs_pearson": {
+          "exclude": 0.1871933983818283,
+          "zero": 0.1871933983818283
+        },
+        "passed": true
+      }
+    },
+    "records": [
+      {
+        "ecg_id": 1379,
+        "patient_id": 7123,
+        "labels": [
+          "NORM"
+        ],
+        "target_class": "NORM",
+        "logit": 0.4502912759780884,
+        "calibrated_probability": 0.5765004428909264,
+        "max_f1_threshold": 0.4152574292946774,
+        "raw_peak": 0.12122368812561035,
+        "random": {
+          "0": {
+            "pearson": -0.2879442242236701,
+            "spearman": -0.28653453553548514,
+            "raw_peak": 0.21073278784751892,
+            "logit": 3.9327423572540283
+          },
+          "1": {
+            "pearson": 0.0885582160314276,
+            "spearman": 0.19719760198152506,
+            "raw_peak": 0.09243343770503998,
+            "logit": 0.5912550687789917
+          },
+          "2": {
+            "pearson": -0.012980603742690928,
+            "spearman": 0.09027665438951292,
+            "raw_peak": 0.05244829133152962,
+            "logit": 0.38450199365615845
+          }
+        }
+      },
+      {
+        "ecg_id": 16373,
+        "patient_id": 6942,
+        "labels": [
+          "MI"
+        ],
+        "target_class": "MI",
+        "logit": 3.765514373779297,
+        "calibrated_probability": 0.830094820104639,
+        "max_f1_threshold": 0.3673568018073194,
+        "raw_peak": 0.22926858067512512,
+        "random": {
+          "0": {
+            "pearson": null,
+            "spearman": null,
+            "raw_peak": 0.0,
+            "logit": -3.023599624633789
+          },
+          "1": {
+            "pearson": -0.1761050551680542,
+            "spearman": -0.140644183528852,
+            "raw_peak": 0.13636557757854462,
+            "logit": 2.9736926555633545
+          },
+          "2": {
+            "pearson": 0.15310337512229807,
+            "spearman": 0.16882932191930014,
+            "raw_peak": 0.07931752502918243,
+            "logit": 1.3385663032531738
+          }
+        }
+      },
+      {
+        "ecg_id": 13720,
+        "patient_id": 2479,
+        "labels": [
+          "STTC"
+        ],
+        "target_class": "STTC",
+        "logit": 1.6429219245910645,
+        "calibrated_probability": 0.5090623850366162,
+        "max_f1_threshold": 0.37266018959753316,
+        "raw_peak": 0.07518947869539261,
+        "random": {
+          "0": {
+            "pearson": 0.3937175664678597,
+            "spearman": 0.2753520772943861,
+            "raw_peak": 0.06317749619483948,
+            "logit": 0.8349793553352356
+          },
+          "1": {
+            "pearson": null,
+            "spearman": null,
+            "raw_peak": 0.0,
+            "logit": -0.9306944608688354
+          },
+          "2": {
+            "pearson": 0.7162220728235473,
+            "spearman": 0.598495476137196,
+            "raw_peak": 0.08487305790185928,
+            "logit": 1.9402743577957153
+          }
+        }
+      },
+      {
+        "ecg_id": 8684,
+        "patient_id": 19514,
+        "labels": [
+          "MI",
+          "CD",
+          "HYP"
+        ],
+        "target_class": "CD",
+        "logit": 5.4090070724487305,
+        "calibrated_probability": 0.9199198379250457,
+        "max_f1_threshold": 0.3569537971230041,
+        "raw_peak": 0.273280531167984,
+        "random": {
+          "0": {
+            "pearson": null,
+            "spearman": null,
+            "raw_peak": 0.0,
+            "logit": -2.3006606101989746
+          },
+          "1": {
+            "pearson": -0.25014761690446935,
+            "spearman": -0.19558261079649597,
+            "raw_peak": 0.07129128277301788,
+            "logit": 0.6373089551925659
+          },
+          "2": {
+            "pearson": -0.01138654504390839,
+            "spearman": -0.10031310231685737,
+            "raw_peak": 0.02531467005610466,
+            "logit": -1.0109363794326782
+          }
+        }
+      },
+      {
+        "ecg_id": 7945,
+        "patient_id": 6212,
+        "labels": [
+          "STTC",
+          "CD",
+          "HYP"
+        ],
+        "target_class": "HYP",
+        "logit": 2.9445056915283203,
+        "calibrated_probability": 0.5814297227377009,
+        "max_f1_threshold": 0.39621285121338645,
+        "raw_peak": 0.18554644286632538,
+        "random": {
+          "0": {
+            "pearson": 0.02971939751320588,
+            "spearman": 0.030383398061231456,
+            "raw_peak": 0.1029103547334671,
+            "logit": 1.4697954654693604
+          },
+          "1": {
+            "pearson": 0.270194758148551,
+            "spearman": 0.19709303030026082,
+            "raw_peak": 0.04772301763296127,
+            "logit": 0.09213818609714508
+          },
+          "2": {
+            "pearson": -0.042274395176696684,
+            "spearman": -0.040162745202940005,
+            "raw_peak": 0.02002796158194542,
+            "logit": -1.3855029344558716
+          }
+        }
+      }
+    ]
+  },
+  "calibration_check": {
+    "explanation": "A calibrator maps the logit y to a * y + b with a > 0. The gradient becomes a * dy/dA, so every channel weight and the weighted sum are multiplied by a; ReLU(a s) = a ReLU(s) because a > 0; interpolation is linear; and the division by the maximum removes the factor a. b is a constant with no gradient. The normalised map is identical.",
+    "records": [
+      {
+        "ecg_id": 1379,
+        "class": "NORM",
+        "method": "temperature",
+        "a": 0.6848494158008892,
+        "b": 0.0,
+        "temperature": 1.460175006253837,
+        "max_abs_map_difference": 8.372398418998728e-08,
+        "raw_peak_ratio": 0.6848494145922207
+      },
+      {
+        "ecg_id": 16373,
+        "class": "MI",
+        "method": "platt",
+        "a": 0.6720008195644352,
+        "b": -0.9441746675727068,
+        "max_abs_map_difference": 7.76360388199393e-08,
+        "raw_peak_ratio": 0.6720008392069806
+      },
+      {
+        "ecg_id": 13720,
+        "class": "STTC",
+        "method": "platt",
+        "a": 0.7391651759619916,
+        "b": -1.1781540812886497,
+        "max_abs_map_difference": 8.219798952602275e-08,
+        "raw_peak_ratio": 0.7391651962427568
+      },
+      {
+        "ecg_id": 8684,
+        "class": "CD",
+        "method": "platt",
+        "a": 0.7060856348612679,
+        "b": -1.378120041250891,
+        "max_abs_map_difference": 8.425122366428894e-08,
+        "raw_peak_ratio": 0.7060856359257748
+      },
+      {
+        "ecg_id": 7945,
+        "class": "HYP",
+        "method": "platt",
+        "a": 0.6184604261913916,
+        "b": -1.4922618821224223,
+        "max_abs_map_difference": 1.2550504480124403e-07,
+        "raw_peak_ratio": 0.6184603990535995
+      }
+    ]
+  },
+  "examples": {
+    "selection": "per class: single-label record, all five decisions correct at the max-F1 thresholds, highest calibrated probability for the class (a best case, not a typical one)",
+    "per_class": {
+      "MI": {
+        "ecg_id": 17976,
+        "patient_id": 2258,
+        "labels": [
+          "MI"
+        ],
+        "target_class": "MI",
+        "logit": 9.565181732177734,
+        "calibrated_probability": 0.9958627716483691,
+        "max_f1_threshold": 0.3673568018073194,
+        "raw_peak": 0.3653930127620697,
+        "eligible_records": 104,
+        "all_probabilities": {
+          "NORM": 0.0011348018415340238,
+          "MI": 0.9958627716483691,
+          "STTC": 0.02173526009577301,
+          "CD": 0.006197112492426075,
+          "HYP": 0.004466751732934053
+        },
+        "figure": "reports/figures/gradcam_example_MI_val.png"
+      },
+      "STTC": {
+        "ecg_id": 3884,
+        "patient_id": 16894,
+        "labels": [
+          "STTC"
+        ],
+        "target_class": "STTC",
+        "logit": 6.130704402923584,
+        "calibrated_probability": 0.9662163921975059,
+        "max_f1_threshold": 0.37266018959753316,
+        "raw_peak": 0.3307598829269409,
+        "eligible_records": 129,
+        "all_probabilities": {
+          "NORM": 0.005848262423820511,
+          "MI": 0.06873364341663572,
+          "STTC": 0.9662163921975059,
+          "CD": 0.042281175964845444,
+          "HYP": 0.13996974766141856
+        },
+        "figure": "reports/figures/gradcam_example_STTC_val.png"
+      },
+      "CD": {
+        "ecg_id": 18611,
+        "patient_id": 21792,
+        "labels": [
+          "CD"
+        ],
+        "target_class": "CD",
+        "logit": 9.947266578674316,
+        "calibrated_probability": 0.9964801153820471,
+        "max_f1_threshold": 0.3569537971230041,
+        "raw_peak": 0.4631637930870056,
+        "eligible_records": 95,
+        "all_probabilities": {
+          "NORM": 0.00830546100861684,
+          "MI": 0.06120793852443073,
+          "STTC": 0.007321894610154577,
+          "CD": 0.9964801153820471,
+          "HYP": 0.1873537732202834
+        },
+        "figure": "reports/figures/gradcam_example_CD_val.png"
+      }
+    }
+  },
+  "figures": {
+    "randomisation": "reports/figures/gradcam_randomisation_val.png",
+    "example_MI": "reports/figures/gradcam_example_MI_val.png",
+    "example_STTC": "reports/figures/gradcam_example_STTC_val.png",
+    "example_CD": "reports/figures/gradcam_example_CD_val.png"
+  }
+}
