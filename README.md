@@ -13,7 +13,9 @@ The build specification is [PROJECT_SPEC.md](PROJECT_SPEC.md). Every setting liv
 - 21,799 records from 18,869 patients; each record is 10 s × 12 leads (1000 × 12 samples at 100 Hz).
 - Licence: Creative Commons Attribution 4.0 International (CC BY 4.0). The data is not committed to git.
 - Files are fetched from PhysioNet's AWS Open Data mirror (`s3://physionet-open/ptb-xl/1.0.3/`, listed on the
-  PTB-XL project page), because physionet.org measured about 7 KB/s per connection from the development laptop.
+  PTB-XL project page), because physionet.org measured about 7 KB/s per connection during development. To download
+  from physionet.org directly, set `download.source_url` to `dataset.base_url` and lower `download.workers` to 4; both
+  sources are verified the same way.
   Every file is checked against PhysioNet's `SHA256SUMS.txt`, whose own SHA-256 is pinned in the config.
 
 ### Citation
@@ -26,25 +28,52 @@ The build specification is [PROJECT_SPEC.md](PROJECT_SPEC.md). Every setting liv
 - Goldberger, A., et al. (2000). PhysioBank, PhysioToolkit, and PhysioNet: Components of a new research resource
   for complex physiologic signals. *Circulation*, 101(23), e215–e220.
 
-## Setup (Windows 11, PowerShell)
+## Setup
 
-Requires Python 3.11 and an NVIDIA driver that supports CUDA 12.6 (560 or newer).
+Requires Python 3.11. An NVIDIA GPU with CUDA is recommended for training. The reported results came from a 4 GB
+laptop GPU with `training.batch_size` 64, so most NVIDIA GPUs from recent years are enough.
+
+Windows (PowerShell):
 
 ```powershell
-winget install --id Python.Python.3.11 --exact --scope user   # if Python 3.11 is not installed
 py -3.11 -m venv .venv
 .\.venv\Scripts\Activate.ps1
 python -m pip install --upgrade pip
-pip install -r requirements.txt          # torch comes from PyTorch's cu126 index
-python -c "import torch; print(torch.cuda.is_available(), torch.cuda.get_device_name(0))"
+pip install -r requirements.txt
 ```
 
-On an ASUS laptop with the GPU in Eco (iGPU-only) mode the RTX 3050 is powered off and CUDA reports `False`;
-switch the GPU mode to Standard or Ultimate first.
+Linux or macOS:
+
+```bash
+python3.11 -m venv .venv
+source .venv/bin/activate
+python -m pip install --upgrade pip
+pip install -r requirements.txt
+```
+
+Check that PyTorch sees the GPU (prints `True` when it does):
+
+```shell
+python -c "import torch; print(torch.cuda.is_available())"
+```
+
+- **PyTorch build.** `requirements.txt` pins the exact versions behind the reported results, including PyTorch 2.14.1
+  built for CUDA 12.6 (from PyTorch's cu126 index; it needs an NVIDIA driver of version 560 or newer). The same build
+  also runs on the CPU when no GPU is present. For another CUDA version, or on macOS: delete the `--extra-index-url`
+  and `torch==` lines from `requirements.txt`, install torch 2.14.1 with the command
+  [pytorch.org](https://pytorch.org/get-started/locally/) gives for your system, then run
+  `pip install -r requirements.txt`.
+- **If it prints `False`** on a machine with an NVIDIA GPU, check that `nvidia-smi` lists the GPU and that the driver
+  supports CUDA 12.6.
+- **Without an NVIDIA GPU.** Set `training.device: cpu` in `config/default.yaml` (training is much slower) and run the
+  tests with `pytest --ignore=tests/test_cuda.py`. That file checks the GPU, and it fails rather than skips when none
+  is visible.
+- **Numbers on other hardware.** Deterministic kernels make a run repeatable on one machine, but not identical across
+  GPUs or on the CPU. A model retrained elsewhere will be close to the committed reports but not identical.
 
 ## Data
 
-```powershell
+```shell
 python -m src.data.download                # resumable; files already on disk are skipped
 python -m src.data.download --verify-only  # counts records and patients, checks every record file exists
 python -m src.data.inspect_record          # loads one record and writes reports/figures/sample_record.png
@@ -91,14 +120,15 @@ pytest
   `TestSetLockedError` unless `allow_test=True` (the bool, not a truthy string) is passed. Only the one-time final
   evaluation and the demo API may pass it. A test fails if any module outside `src/data/` mentions `allow_test`,
   `test_folds` or `strat_fold`, except an explicit allowlist that starts empty.
-- **Loading speed** (measured, batch 64, augmentation on, no model). One training epoch loads in 2.9 s with no worker
-  processes, 1.7 s with 2 and 1.0 s with 4, after about 7 s to start the workers once. Each Windows worker
-  re-imports CUDA PyTorch and commits about 1.8 GB of memory, so the config uses 2 workers for training and none for
-  validation and test.
+- **Loading speed** (measured on the Windows development machine, batch 64, augmentation on, no model). One training
+  epoch loads in 2.9 s with no worker processes, 1.7 s with 2 and 1.0 s with 4, after about 7 s to start the workers
+  once. On Windows each worker re-imports CUDA PyTorch and commits about 1.8 GB of memory, so the config uses 2 workers
+  for training and none for validation and test. To tune `dataloader.num_workers` for another machine, measure with
+  `python -m src.data.inspect_pipeline`.
 
 ## Baselines (validation only)
 
-```powershell
+```shell
 python -m src.models.baselines     # about 40 s; writes reports/baselines_val.json
 python -m src.models.rpeak_check   # about 1 min; how the beat detector was chosen, on training records only
 ```
@@ -137,11 +167,11 @@ prevalence, NORM's 0.856 under twice.
 
 ## Training (validation only)
 
-```powershell
-python -m pytest tests/test_cuda.py               # the GPU is visible (Armoury Crate GPU Mode: Standard)
+```shell
+python -m pytest tests/test_cuda.py               # the GPU is visible and computes correctly
 python -m src.models.resnet1d                     # layer shapes and the parameter count
 python -m src.training.train --overfit            # sanity check, about 30 s
-python -m src.training.train --name main          # full run, about 5 min on the RTX 3050 Laptop
+python -m src.training.train --name main          # full run, about 5 min on a 4 GB laptop GPU (RTX 3050)
 python -m src.training.compare_runs <run A> <run B>   # paired comparison of two runs on the validation split
 python -m src.training.summarize_comparisons --name <name> <compare json> ...   # the same comparison over several seeds
 ```
@@ -224,7 +254,7 @@ bit for bit.
 
 ## Evaluation (validation only)
 
-```powershell
+```shell
 python -m src.training.calibrate          # about 25 s; calibration, then thresholds, metrics and all validation figures
 python -m src.evaluation.evaluate_val     # the second half alone, reusing the saved reports/calibration.json
 ```
@@ -235,6 +265,13 @@ with deterministic GPU kernels and check that the predictions reproduce the vali
 `reports/figures/reliability_val.png`. Then, in the same process and on the same predictions, the evaluation calibrates
 the probabilities, chooses per-class thresholds on them and writes `reports/thresholds.json`,
 `reports/metrics_val.json` and the other figures in `reports/figures/`. Fold 10 is not opened.
+
+**On a fresh clone.** Model weights are not committed (`checkpoints/` is ignored by git), so the run above exists only
+on the machine that trained it. Train your own run first, then pass its id (printed by `train` and used to name
+`reports/runs/<run_id>.json`) to each step, in this order: `python -m src.training.calibrate --run <run_id>`, then
+`python -m src.explain.gradcam_val --run <run_id>`. Or set `evaluation.model_run` in the config. Until then,
+`tests/test_calibration.py::test_calibration_recomputed_from_the_checkpoint_leaves_auroc_unchanged` fails, because it
+re-predicts with the original checkpoint.
 
 - **Max-F1 operating point.** Per class, the threshold with the highest validation F1 (exact ties go to the lower
   threshold, which keeps the same F1 with more sensitivity).
@@ -334,7 +371,7 @@ differences of a few thousandths (NORM: 0.0183 vs 0.0185) are noise.
 
 ## Explainability: 1D Grad-CAM (validation only)
 
-```powershell
+```shell
 python -m src.explain.gradcam_val         # about 20 s; randomisation check, example overlays, reports/gradcam_val.json
 ```
 

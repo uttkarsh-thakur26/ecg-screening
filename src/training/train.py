@@ -135,9 +135,9 @@ def seed_everything(seed: int, deterministic: bool) -> None:
 
 def resolve_device(name: str) -> torch.device:
     if name == "cuda" and not torch.cuda.is_available():
-        raise RuntimeError("training.device is 'cuda' but torch cannot see a CUDA GPU. On the ASUS TUF A15 set "
-                           "Armoury Crate GPU Mode to Standard. To train on the CPU on purpose, pass "
-                           "--set training.device=cpu.")
+        raise RuntimeError("training.device is 'cuda' but torch cannot see a CUDA GPU. Check that nvidia-smi lists "
+                           "the GPU and that the driver supports this PyTorch build's CUDA version. To run on the CPU "
+                           "on purpose, pass --set training.device=cpu or set it in the config.")
     return torch.device(name)
 
 
