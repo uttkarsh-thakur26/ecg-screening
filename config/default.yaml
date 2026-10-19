@@ -203,6 +203,49 @@ calibration:                  # src/training/calibrate.py; fitted and chosen on 
   # by floating-point rounding only.
   ranking_tolerance: 1.0e-12
 
+release:                      # the frozen model, src/evaluation/release.py; fold 10 is evaluated with exactly this
+  model_version: "1.0"
+  tag: v1.0-model             # git tag of the commit that holds the one-time test evaluation
+  # A byte copy of checkpoints/<evaluation.model_run>/best.pt, with the run's effective config next to it.
+  # checkpoints/ is not committed, so the committed manifest (reports/release.json) pins the file by its SHA-256.
+  checkpoint: checkpoints/release.pt
+  config_file: checkpoints/release_config.yaml
+  manifest_file: release.json # in paths.reports_dir
+  # Recomputed numbers (refitted calibrator parameters, ECEs, thresholds, metrics) must equal the stored ones to
+  # within this. Every step is deterministic float64 on the same logits, so any real difference is far larger.
+  recompute_tolerance: 1.0e-12
+
+seed_stability:               # src/evaluation/seed_stability.py; validation split only, no training
+  # The committed config (amplitude scaling off) trained with seeds 42, 43 and 44. Their run records differ in
+  # training.seed only (checked). The release model is the seed-42 run, evaluation.model_run.
+  runs: [20261017-215633_no-amp-scale, 20261017-224121_off-s43, 20261017-225026_off-s44]
+  std_ddof: 1                 # sample standard deviation over the seeds, as in reports/runs/summary_amplitude_scale_seeds.json
+  report_file: seed_stability_val.json   # in paths.reports_dir
+
+error_analysis:               # src/evaluation/error_analysis.py; validation split (fold 9) only, release model
+  operating_point: high_sensitivity      # the screening operating point, from evaluation.thresholds_file
+  examples: 10                # the most confident false negatives, and as many false positives
+  # Confidence is the calibrated probability. A false negative is more confident the LOWER the probability of the
+  # missed class, a false positive the HIGHER the probability of the wrongly flagged class. Calibration puts the
+  # classes on one scale, so errors of different classes are ranked together. One entry per record: a record
+  # wrong for several classes is ranked by its most confident error of that kind and lists the others, so the
+  # examples are distinct ECGs. Exact ties (none expected in float64) go to the lower ecg_id.
+  report_file: error_analysis_val.json   # in paths.reports_dir
+  # PTB-XL's per-record annotations (ptbxl_database.csv) compared between the errors and all validation records.
+  # Each quality column holds the affected leads as text, or is empty when the problem was not noted.
+  quality_columns: [baseline_drift, static_noise, burst_noise, electrodes_problems, extra_beats, pacemaker]
+  sex_codes: {0: male, 1: female}        # PTB-XL's coding of the sex column
+  age_over_89_code: 300       # PTB-XL sets the age of patients over 89 to this value (de-identification)
+  figures:                    # in paths.figures_dir; dpi from evaluation.figures
+    false_negatives: error_analysis_fn_val.png
+    false_positives: error_analysis_fp_val.png
+    columns: 2
+    panel_in: [7.0, 4.6]      # width and height of one record's 12-lead panel
+    # The 12 leads are stacked on one common mV scale, this far apart, so amplitudes compare across leads and
+    # records (voltage matters for HYP); a large deflection may overlap its neighbour.
+    lead_spacing_mv: 2.0
+    time_grid_s: 1.0
+
 explain:                      # Grad-CAM, spec section 5; src/explain/gradcam_val.py uses the validation split only
   report_file: gradcam_val.json   # in paths.reports_dir
   lead: II                    # drawn under the band; the map is per time position, shared by all 12 leads

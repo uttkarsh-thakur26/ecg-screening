@@ -1,4 +1,4 @@
-"""ROC, precision-recall, confusion-matrix, reliability, training-curve and class-support figures (PROJECT_SPEC.md section 4).
+"""ROC, precision-recall, confusion, reliability, training-curve, class-support and ECG-example figures (spec section 4).
 
 Every function takes real arrays, a run's CSV or binned numbers from a report and writes one PNG; nothing here
 computes a number that is not drawn from its inputs.
@@ -10,6 +10,7 @@ apart by marker shape as well as colour, so they stay distinct in greyscale and 
 
 from __future__ import annotations
 
+import textwrap
 from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import Any
@@ -403,5 +404,55 @@ def plot_class_distribution(targets_by_split: Mapping[str, np.ndarray], classes:
     ax.yaxis.set_major_formatter(PercentFormatter(1.0, decimals=0))
     ax.set_ylim(0, max(np.asarray(y).mean(axis=0).max() for y in targets_by_split.values()) * 1.15)
     ax.legend(frameon=False, fontsize=8.5, labelcolor=INK_SECONDARY, loc="upper right")
+    _finish(fig, title, subtitle)
+    return _save(fig, path, dpi)
+
+
+ECG_TRACE_WIDTH = 0.55
+NOTE_PT = 7.5                # size of the wrapped note under each record's heading
+NOTE_CHAR_EM = 0.55          # average glyph width as a share of the font size, for wrapping the note
+
+
+def plot_ecg_examples(signals: np.ndarray, leads: Sequence[str], fs: float, headings: Sequence[str],
+                      notes: Sequence[str], path: Path, *, title: str, subtitle: str | None, columns: int,
+                      panel_in: Sequence[float], lead_spacing_mv: float, time_grid_s: float, dpi: int) -> Path:
+    """One panel per record: all leads stacked top to bottom on one common mV scale, lead_spacing_mv apart.
+
+    signals: (records, leads, samples) in mV, as cached (before the z-score). headings: one bold line per record;
+    notes: one wrapped line of context per record. The common scale keeps amplitudes comparable across leads and
+    records, so a large deflection may overlap the lead below it.
+    """
+    signals = np.asarray(signals, dtype=np.float64)
+    if signals.ndim != 3 or signals.shape[1] != len(leads) or len(signals) == 0:
+        raise ValueError(f"signals must be (records, {len(leads)} leads, samples), got {signals.shape}")
+    if not np.isfinite(signals).all():
+        raise ValueError("signals contain NaN or infinite samples")
+    if len(headings) != len(signals) or len(notes) != len(signals):
+        raise ValueError(f"{len(signals)} records but {len(headings)} headings and {len(notes)} notes")
+    if columns < 1 or lead_spacing_mv <= 0 or time_grid_s <= 0:
+        raise ValueError("columns, lead_spacing_mv and time_grid_s must be positive")
+    width_in, height_in = panel_in
+    n, n_leads, n_samples = signals.shape
+    rows = -(-n // columns)
+    fig, axes = plt.subplots(rows, columns, figsize=(width_in * columns, height_in * rows + HEADER_IN),
+                             squeeze=False, facecolor=SURFACE)
+    t = np.arange(n_samples) / fs
+    offsets = -lead_spacing_mv * np.arange(n_leads)
+    wrap_chars = max(40, int(width_in / (NOTE_CHAR_EM * NOTE_PT / 72)))
+    for k, ax in enumerate(axes.flat):
+        if k >= n:
+            ax.axis("off")
+            continue
+        for j in range(n_leads):
+            ax.plot(t, signals[k, j] + offsets[j], color=INK, linewidth=ECG_TRACE_WIDTH)
+        _style(ax)
+        ax.grid(axis="y", visible=False)
+        ax.set_yticks(offsets, list(leads), fontsize=7)
+        ax.set_xlim(0, n_samples / fs)
+        ax.set_ylim(offsets[-1] - lead_spacing_mv, offsets[0] + lead_spacing_mv)
+        ax.set_xticks(np.arange(0, n_samples / fs + time_grid_s / 2, time_grid_s))
+        ax.set_xlabel("Time (s)", fontsize=7.5)
+        note = "\n".join(textwrap.wrap(notes[k], wrap_chars))
+        ax.set_title(f"{headings[k]}\n{note}", loc="left", fontsize=NOTE_PT, color=INK, linespacing=1.35)
     _finish(fig, title, subtitle)
     return _save(fig, path, dpi)

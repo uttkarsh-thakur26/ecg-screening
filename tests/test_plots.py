@@ -123,3 +123,20 @@ def test_reliability_diagrams(tmp_path, predictions):
         plots.plot_reliability_diagrams(coarse, {c: reliability_bins(y[:, j], p[:, j], 5) for j, c in enumerate(CLASSES)},
                                         ("B", "A"), CLASSES, DESCRIPTIONS, {c: "" for c in CLASSES}, tmp_path / "y.png",
                                         title="R", subtitle=None, **STYLE)
+
+
+def test_ecg_examples_figure(tmp_path):
+    rng = np.random.default_rng(1)
+    signals = rng.normal(0, 0.3, (3, 12, 1000))
+    leads = ["I", "II", "III", "AVR", "AVL", "AVF", "V1", "V2", "V3", "V4", "V5", "V6"]
+    out = plots.plot_ecg_examples(signals, leads, 100, ["a", "b", "c"], ["note " * 40, "n", "n"], tmp_path / "ecg.png",
+                                  title="T", subtitle="S", columns=2, panel_in=[4.0, 3.0], lead_spacing_mv=2.0,
+                                  time_grid_s=1.0, dpi=60)
+    assert _is_png(out)
+    with pytest.raises(ValueError, match="headings"):
+        plots.plot_ecg_examples(signals, leads, 100, ["a"], ["n"], tmp_path / "x.png", title="T", subtitle=None,
+                                columns=2, panel_in=[4.0, 3.0], lead_spacing_mv=2.0, time_grid_s=1.0, dpi=60)
+    with pytest.raises(ValueError, match="leads"):
+        plots.plot_ecg_examples(signals[:, :6], leads, 100, ["a", "b", "c"], ["n"] * 3, tmp_path / "x.png", title="T",
+                                subtitle=None, columns=2, panel_in=[4.0, 3.0], lead_spacing_mv=2.0, time_grid_s=1.0,
+                                dpi=60)
