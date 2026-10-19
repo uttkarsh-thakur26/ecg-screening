@@ -18,9 +18,15 @@ from src.data.norm_stats import load_norm_stats, norm_stats_path
 B = 64  # training.batch_size in config/default.yaml
 
 # Modules outside src/data/ that may unlock fold 10. The one-time evaluation (session 9) was added in the commit
-# that also committed reports/TEST_PLAN.md, before fold 10 was opened. Add the demo API (session 10) here,
-# deliberately, when it is written. Nothing else belongs on this list.
-MAY_UNLOCK_TEST: set[str] = {"src/evaluation/evaluate_test.py"}
+# that also committed reports/TEST_PLAN.md, before fold 10 was opened. Nothing else belongs on this list.
+MAY_UNLOCK_TEST: set[str] = {
+    "src/evaluation/evaluate_test.py",
+    # Added deliberately in session 10, after the one-time evaluation: the demo API serves the held-out test records
+    # (ids, signals, one-record predictions with the frozen model, labels only after a prediction) and never computes
+    # a metric. The test metrics it serves are reports/metrics.json, verbatim. It is the only API module that opens
+    # fold 10; main.py, upload.py and schemas.py stay under the scan.
+    "src/api/service.py",
+}
 SPLIT_TOKENS = ("allow_test", "test_folds", "strat_fold")
 
 

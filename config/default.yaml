@@ -309,6 +309,40 @@ explain:                      # Grad-CAM, spec section 5; src/explain/gradcam_va
     randomisation_panel_in: [4.6, 1.5]   # width and height of one record's panel; one column per model
     band_alpha: 0.6           # opacity of the band where the map is 1; it is transparent where the map is 0
 
+api:                          # src/api/, spec section 6: the frozen release model behind a local FastAPI server
+  # python -m src.api.main serves on this address. Localhost only: the demo needs no network.
+  host: 127.0.0.1
+  port: 8000
+  # The device the one-time evaluation ran on. The server refuses to start without CUDA instead of quietly
+  # moving to the CPU; set cpu here to serve on the CPU on purpose (slower, tens of milliseconds per record with
+  # Grad-CAM). The probabilities then differ from the evaluation's by floating-point rounding only.
+  device: cuda
+  # The only origin the browser may call the API from: the Vite dev server (npm run dev in frontend/).
+  cors_origins: [http://localhost:5173]
+  # Flags in /api/predict use this operating point's frozen thresholds (thresholds.json). It covers the abnormal
+  # classes only; the normal class gets a probability and no flag.
+  operating_point: high_sensitivity
+  upload:                     # POST /api/predict with a .hea + .dat pair (multipart form fields "hea" and "dat")
+    # Whole request, both files. A 10 s 12-lead record is 24 kB at 100 Hz and 120 kB at 500 Hz in WFDB format 16,
+    # so 1 MiB leaves room for 2 kHz recordings. It must not exceed Starlette's in-memory spool size (also 1 MiB),
+    # so an upload is never written to disk before the API's own temporary folder (checked at startup).
+    max_request_bytes: 1048576
+    # Parent of the per-request temporary folder that holds the two files while wfdb reads them; the folder is
+    # deleted when the request ends, whatever the outcome. null: the operating system's temporary folder.
+    tmp_dir: null
+    # Records at another sampling rate are resampled to dataset.sampling_rate_hz with scipy.signal.resample_poly:
+    # a polyphase FIR filter that removes the frequencies the lower rate cannot hold before decimating. The window
+    # is scipy's default, written out so the setting is on record. Only whole-number rates are accepted, so the
+    # up/down factors stay small integers, and the record must last exactly dataset.record_duration_s.
+    resample_window: [kaiser, 5.0]
+    # How the filter sees past the two ends of the record. scipy's default, constant (zeros), treats the signal as
+    # dropping to 0 mV beyond the edges, and an ECG rarely sits at 0 mV there. Measured on 3,000 training records
+    # (seed 42), resampled 100 -> 500 Hz, quantised as WFDB stores them, and back to 100 Hz (tests/test_api.py
+    # repeats it on 300 of them): in the first and last 0.1 s the largest error is 2.33 mV with constant (99th
+    # percentile 1.22 mV) and 0.16 mV with line, which extends each end along its linear trend (99th percentile
+    # 0.045 mV). Elsewhere both stay within 0.033 mV (median 0.0035 mV).
+    resample_padtype: line
+
 baselines:                    # spec section 3, src/models/baselines.py; fit on the training split, scored on validation only
   report_file: baselines_val.json   # in paths.reports_dir
   workers: 8                  # processes extracting features in parallel

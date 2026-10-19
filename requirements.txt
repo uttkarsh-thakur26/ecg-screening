@@ -27,3 +27,4 @@ python-multipart==0.0.32
 
 # Tests
 pytest==9.1.1
+httpx2==2.14.0              # HTTP client behind FastAPI's TestClient (tests/test_api.py)

@@ -32,7 +32,8 @@ the build specification is [PROJECT_SPEC.md](PROJECT_SPEC.md), and every setting
 | Band-pass filter comparison (a filter that removes slow drift and fast noise) | Implemented, not yet measured |
 | Error analysis (validation) | Done: [reports/error_analysis.md](reports/error_analysis.md) |
 | Final test evaluation (`reports/metrics.json`) | Done once, 2026-10-19 (tag `v1.0-model`): [reports/TEST_RUN.md](reports/TEST_RUN.md) |
-| FastAPI backend and React frontend | Not implemented yet (placeholder files only) |
+| FastAPI backend (demo API on the frozen model) | Done: [Running the API](#running-the-api) |
+| React frontend | Not implemented yet (placeholder files only) |
 
 **Jump to:** [Installation](#installation-and-setup) · [Data](#downloading-and-preparing-the-data) ·
 [Training](#training-the-model) · [Results](#results-validation-only) ·
@@ -124,11 +125,10 @@ This README gives the overview. The technical details, with every number traced 
 | matplotlib | All figures in `reports/figures/` |
 | PyYAML | The configuration file |
 | requests, tqdm | Downloading the dataset with progress bars |
-| pytest | The test suite |
+| FastAPI, pydantic, uvicorn, python-multipart | The demo API in `src/api/` |
+| pytest, httpx2 | The test suite (httpx2 is the HTTP client behind FastAPI's test client) |
 
-FastAPI, pydantic, uvicorn and python-multipart are pinned in `requirements.txt` for the planned
-backend but are not used yet. The planned frontend (React, Vite, TypeScript, Tailwind) has not been
-set up.
+The planned frontend (React, Vite, TypeScript, Tailwind) has not been set up.
 
 ## Dataset
 
@@ -695,6 +695,44 @@ ran the plan committed in [reports/TEST_PLAN.md](reports/TEST_PLAN.md) on fold 1
 `reports/fold10_access_log.jsonl`, and a rerun is only allowed after a documented bug fix in the
 evaluation code. `--rehearse <folder>` runs the same pipeline on fold 9 only.
 
+## Running the API
+
+```bash
+python -m src.api.main
+```
+
+Serves the frozen release model on `http://127.0.0.1:8000` (`api.host` and `api.port` in
+[config/default.yaml](config/default.yaml)); interactive documentation is at `/docs`. It needs the
+same local files as the evaluation: the data cache and `checkpoints/release.pt`. At startup it checks
+`release.pt`, `reports/calibration.json` and `reports/thresholds.json` against the SHA-256 values in
+`reports/release.json`, and checks that `reports/metrics.json` was computed with them; if anything
+differs it stops with an error instead of serving. By default it runs on the GPU (`api.device`) and
+refuses to start without one; set `api.device: cpu` to serve on the CPU.
+
+| Endpoint | Returns |
+|---|---|
+| `GET /api/health` | Status and model version |
+| `GET /api/records` | The ids of the 2,158 held-out test records (fold 10). No labels, no patient data |
+| `GET /api/records/{id}/signal` | The record's 12 leads x 1000 samples in mV, before normalisation |
+| `POST /api/predict` | JSON `{"record_id": "<id>"}`, or a form upload with files `hea` and `dat` (a WFDB record) |
+| `GET /api/records/{id}/truth` | The record's labels, only after `POST /api/predict` for that record (409 before) |
+| `GET /api/metrics` | `reports/metrics.json`, byte for byte |
+
+A prediction gives every class its calibrated probability. The four abnormal classes also get their
+high-sensitivity threshold and a flag (probability >= threshold); NORM gets no flag. It adds the
+summary ("N of 4 abnormal categories flagged"), the Grad-CAM map of the abnormal class with the
+highest probability (1000 values in [0, 1]), the model version and the inference time.
+
+```bash
+curl -s -X POST http://127.0.0.1:8000/api/predict -H "Content-Type: application/json" -d "{\"record_id\": \"9\"}"
+```
+
+Uploads must be 12-lead WFDB records in mV, exactly 10 s long, at a whole-number sampling rate;
+other rates are resampled to 100 Hz. Anything else is refused with a 400 and the reason. The request
+is capped at 1 MiB (`api.upload.max_request_bytes`), and the two files are deleted as soon as the
+request ends. The API serves the held-out test records for the demo and computes no metrics. The
+browser may call it only from the Vite dev server's origin (`api.cors_origins`).
+
 ## Project structure
 
 ```text
@@ -707,7 +745,7 @@ ecg-screening/
 │   ├── training/            # train.py, calibrate.py, compare_runs.py, summarize_comparisons.py
 │   ├── evaluation/          # metrics, thresholds, calibration, plots, evaluate_val.py; error_analysis.py (placeholder)
 │   ├── explain/             # gradcam1d.py, gradcam_val.py, figures.py
-│   ├── api/                 # FastAPI backend (placeholder, not implemented)
+│   ├── api/                 # FastAPI backend: main.py, service.py, upload.py, schemas.py
 │   ├── config.py            # loads the config
 │   └── provenance.py        # records the git commit in every report
 ├── tests/                   # pytest suite
