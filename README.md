@@ -33,7 +33,7 @@ the build specification is [PROJECT_SPEC.md](PROJECT_SPEC.md), and every setting
 | Error analysis (validation) | Done: [reports/error_analysis.md](reports/error_analysis.md) |
 | Final test evaluation (`reports/metrics.json`) | Done once, 2026-10-19 (tag `v1.0-model`): [reports/TEST_RUN.md](reports/TEST_RUN.md) |
 | FastAPI backend (demo API on the frozen model) | Done: [Running the API](#running-the-api) |
-| React frontend | Not implemented yet (placeholder files only) |
+| React frontend | Screen 1 (choose a record or upload) done; Result and Performance screens are placeholders: [Running the frontend](#running-the-frontend) |
 
 **Jump to:** [Installation](#installation-and-setup) · [Data](#downloading-and-preparing-the-data) ·
 [Training](#training-the-model) · [Results](#results-validation-only) ·
@@ -128,7 +128,9 @@ This README gives the overview. The technical details, with every number traced 
 | FastAPI, pydantic, uvicorn, python-multipart | The demo API in `src/api/` |
 | pytest, httpx2 | The test suite (httpx2 is the HTTP client behind FastAPI's test client) |
 
-The planned frontend (React, Vite, TypeScript, Tailwind) has not been set up.
+The frontend (`frontend/`, Node.js 24) uses React 19, React Router, TypeScript, Vite, Tailwind CSS,
+zod (checks every API response against the API's schemas) and the Inter font, bundled locally so the
+demo works offline. Its exact versions are pinned in `frontend/package.json`.
 
 ## Dataset
 
@@ -733,6 +735,34 @@ is capped at 1 MiB (`api.upload.max_request_bytes`), and the two files are delet
 request ends. The API serves the held-out test records for the demo and computes no metrics. The
 browser may call it only from the Vite dev server's origin (`api.cors_origins`).
 
+## Running the frontend
+
+With the API running, in a second terminal:
+
+```bash
+cd frontend
+npm ci
+npm run dev
+```
+
+Then open `http://localhost:5173`. The dev server takes its address from `api.cors_origins` and calls
+the API at `api.host:api.port`, both read from [config/default.yaml](config/default.yaml), so the page
+always runs on the one origin the API accepts. If that port is taken, the dev server stops with an
+error instead of moving to another port, where the API would refuse its requests.
+
+The first screen lists the held-out test records from `GET /api/records`, searchable by ID, and
+accepts a `.hea` + `.dat` upload by drag and drop. Rejected uploads show the API's own message (400,
+or 413 above the size limit). If the API is not running, the screen says so and offers a retry. The
+page computes no numbers: everything it shows comes from an API response, and a response that does
+not match the API's schemas is shown as an error rather than displayed.
+
+| Command (in `frontend/`) | Does |
+|---|---|
+| `npm test` | Unit tests: record search, upload file handling, API error handling (no network) |
+| `npm run test:contract` | The client against the running API: every response must pass its schemas |
+| `npm run typecheck`, `npm run lint` | TypeScript and oxlint |
+| `npm run build` | Production build in `frontend/dist/` |
+
 ## Project structure
 
 ```text
@@ -754,7 +784,7 @@ ecg-screening/
 │   ├── figures/             # all figures
 │   └── runs/                # one CSV and one JSON per training run, plus run comparisons
 ├── scripts/                 # run_training.sh; run_eval.sh (the one-time test evaluation)
-├── frontend/                # planned React app (placeholder, not set up)
+├── frontend/                # React app: src/lib/api.ts (typed API client), src/pages/, src/components/
 ├── data/                    # PTB-XL download and cache (created locally, not in git)
 ├── checkpoints/             # trained weights (created locally, not in git)
 ├── PROJECT_SPEC.md          # build specification

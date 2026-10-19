@@ -1,0 +1,51 @@
+@import "tailwindcss";
+
+/* Design tokens (PROJECT_SPEC.md section 7). Tailwind's default palette, fonts and weights are removed, so a class
+   outside these tokens (bg-blue-500, font-bold) generates no CSS at all and cannot slip a new colour or weight in. */
+@theme {
+  --color-*: initial;
+  --color-canvas: #fafafa;        /* page background */
+  --color-surface: #ffffff;       /* cards */
+  --color-ink: #1a1a1a;           /* text */
+  --color-ink-muted: #525252;     /* secondary text, 7.4:1 on the canvas */
+  --color-line: #e5e5e5;          /* borders and dividers */
+  --color-line-strong: #a3a3a3;   /* input borders, the drop zone's outline */
+  --color-accent: #0f766e;        /* the one accent: muted clinical teal */
+  --color-accent-strong: #115e59; /* the accent when pressed or hovered */
+  /* Semantic colours, for results only. */
+  --color-flagged: #d97706;       /* amber: flagged */
+  --color-abnormal: #dc2626;      /* red: high-confidence abnormal */
+  --color-normal: #64748b;        /* slate: normal */
+
+  /* One family, bundled with the app (@fontsource/inter, imported in main.tsx), so it works offline. */
+  --font-*: initial;
+  --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
+  --default-mono-font-family: var(--font-sans);
+
+  /* Weights 400, 500 and 600 only. */
+  --font-weight-*: initial;
+  --font-weight-normal: 400;
+  --font-weight-medium: 500;
+  --font-weight-semibold: 600;
+
+  /* 8px spacing scale: p-1 is 8px, p-2 16px, p-3 24px, and so on, for padding, margins, gaps and sizes. */
+  --spacing: 0.5rem;
+}
+
+@layer base {
+  html {
+    color-scheme: light;
+    background-color: var(--color-canvas);
+    color: var(--color-ink);
+    font-family: var(--font-sans);
+    font-weight: var(--font-weight-normal);
+    /* Numbers in tabular figures everywhere, so columns of digits line up. */
+    font-variant-numeric: tabular-nums;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  b,
+  strong {
+    font-weight: var(--font-weight-semibold);
+  }
+}
