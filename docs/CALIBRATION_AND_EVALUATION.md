@@ -10,8 +10,8 @@ screening decisions, and how they are scored. For a short overview, see the
 > **Everything here uses the validation split (fold 9: 2,146 records, 1,917 patients).** The
 > calibrators and the thresholds were fitted, chosen and scored on these same records, so the
 > calibrated and thresholded numbers are optimistic. The unbiased estimate will come from applying
-> the frozen calibrators and thresholds once to the test split (fold 10), which no model has been
-> scored on yet. That final evaluation has **not been run yet**.
+> the frozen calibrators and thresholds once to the test split (fold 10). That was done once, on
+> 2026-10-19: see section 9 and [reports/TEST_RUN.md](../reports/TEST_RUN.md).
 
 ## 1. What is evaluated
 
@@ -271,15 +271,16 @@ Notes:
 - `evaluate_val` alone fails for a new run until `calibrate` has been run for it, because the saved
   calibration belongs to another run.
 
-## 9. Final test evaluation (not run yet)
+## 9. Final test evaluation (done once)
 
-The final, unbiased evaluation has **not been run**, and the code for it is not written yet:
-`scripts/run_eval.sh` is a placeholder that exits with an error, and `reports/metrics.json` does not
-exist. When it is done, it should:
-
-- load the frozen model, calibrators and thresholds without refitting anything;
-- score fold 10 once, with every metric above;
-- write `reports/metrics.json` with the git commit and seed.
+`python -m src.evaluation.evaluate_test` ran once on 2026-10-19, following
+[reports/TEST_PLAN.md](../reports/TEST_PLAN.md), which was committed before fold 10 was opened. It
+loaded the frozen model, calibrators and thresholds (pinned by SHA-256 in `reports/release.json`)
+without refitting anything. It scored fold 10 with every metric above, with 95% patient-bootstrap
+intervals, and wrote `reports/metrics.json`. Test macro AUROC 0.926 [0.918, 0.933], macro AUPRC
+0.819 [0.802, 0.833]. At the high-sensitivity point, macro sensitivity was 0.892 [0.876, 0.907]; the
+calibrated macro ECE was 0.015 (uncalibrated 0.089). Details and the comparison with fold 9:
+[reports/TEST_RUN.md](../reports/TEST_RUN.md).
 
 Until then, every reported number is a validation number.
 

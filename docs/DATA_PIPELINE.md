@@ -221,8 +221,10 @@ enforces this.
 - Today `allow_test=True` is passed only by the tests and by `python -m src.data.inspect_pipeline`,
   which loads one test batch to print its shape (no model, no metrics).
 
-**What "untouched" means here.** No model has been trained, tuned, selected or scored on fold 10,
-and no metric has been computed from it. Its signals are still read when the cache is built and by
+**What "untouched" means here.** No model has been trained, tuned or selected on fold 10. It was
+scored exactly once, by the final evaluation (`src/evaluation/evaluate_test.py`, the only module on the
+allowlist), after every model decision was frozen; `reports/fold10_access_log.jsonl` records that
+opening. Its signals are still read when the cache is built and by
 a few integrity tests, because the cache holds every record.
 
 The lock is a guard rail, not a security boundary. `Cache.signals` holds all folds, and

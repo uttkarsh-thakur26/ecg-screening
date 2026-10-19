@@ -8,9 +8,9 @@ This document gives the full results behind the summary in the
 amplitude-scaling experiment and the determinism check.
 
 > **All numbers here are on the validation split (fold 9: 2,146 records, 1,917 patients).** The
-> test split (fold 10) has not been used to train, tune, select or score any model. The epoch, the
+> test split (fold 10) was never used to train, tune or select anything. The epoch, the
 > augmentation setting and the thresholds were all chosen on fold 9, so fold-9 scores are
-> slightly optimistic.
+> slightly optimistic. The one-time fold-10 result is in [reports/TEST_RUN.md](../reports/TEST_RUN.md).
 
 ## How to read AUROC and AUPRC
 
@@ -248,8 +248,6 @@ If CD becomes the priority, the setting is worth revisiting.
 | Item | Status |
 |---|---|
 | Band-pass filter (0.5–40 Hz) on vs off | Implemented and cached, no training run reported |
-| Error analysis of the highest-confidence false positives and false negatives | Not implemented (`src/evaluation/error_analysis.py` is a placeholder) |
-| Final test evaluation on fold 10 | Not run; `reports/metrics.json` does not exist yet |
 
 ## References
 

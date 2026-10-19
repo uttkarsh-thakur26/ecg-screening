@@ -20,7 +20,7 @@ the build specification is [PROJECT_SPEC.md](PROJECT_SPEC.md), and every setting
 | Model | 1D ResNet, about 6.3 million parameters |
 | Data | PTB-XL 1.0.3: 21,388 labelled records from 18,617 patients, split by patient |
 | Validation result | Macro AUROC 0.929, macro AUPRC 0.816 (seed 42; three-seed mean 0.928 and 0.815). Feature baseline: 0.856 and 0.693. Scale 0 to 1, higher is better ([how to read them](#how-to-read-the-metrics)) |
-| Evaluation status | **Validation only.** No model has been trained, tuned, selected or scored on the test split (fold 10); no test metric exists yet |
+| Test result | **Fold 10, evaluated once on 2026-10-19** with the frozen model, calibration and thresholds: macro AUROC 0.926 [0.918, 0.933], macro AUPRC 0.819 [0.802, 0.833] (95% patient-bootstrap intervals). See [reports/TEST_RUN.md](reports/TEST_RUN.md) |
 
 ### Project status
 
@@ -30,8 +30,8 @@ the build specification is [PROJECT_SPEC.md](PROJECT_SPEC.md), and every setting
 | Calibration and screening thresholds (validation) | Done |
 | Grad-CAM explanations and their sanity check (validation) | Done |
 | Band-pass filter comparison (a filter that removes slow drift and fast noise) | Implemented, not yet measured |
-| Error analysis | Not implemented yet |
-| Final test evaluation (`reports/metrics.json`) | Not run yet |
+| Error analysis (validation) | Done: [reports/error_analysis.md](reports/error_analysis.md) |
+| Final test evaluation (`reports/metrics.json`) | Done once, 2026-10-19 (tag `v1.0-model`): [reports/TEST_RUN.md](reports/TEST_RUN.md) |
 | FastAPI backend and React frontend | Not implemented yet (placeholder files only) |
 
 **Jump to:** [Installation](#installation-and-setup) · [Data](#downloading-and-preparing-the-data) ·
@@ -228,9 +228,10 @@ More detail: [docs/MODEL_AND_TRAINING.md](docs/MODEL_AND_TRAINING.md).
 
 ## Results (validation only)
 
-> All results are on the **validation split** (fold 9), **not** the test split. Because the epoch,
-> settings, calibration and thresholds were chosen on this split, the numbers are optimistic by an
-> unknown amount. The model has not been validated for clinical use.
+> All results in this section are on the **validation split** (fold 9), **not** the test split. Because
+> the epoch, settings, calibration and thresholds were chosen on this split, the numbers are optimistic.
+> The one-time test result (fold 10) is in [reports/TEST_RUN.md](reports/TEST_RUN.md). The model has
+> not been validated for clinical use.
 
 ### How to read the metrics
 
@@ -356,8 +357,8 @@ cases. Raising HYP sensitivity to 0.90 cuts the misses from 113 to 26 of 268, bu
 from 77 to 524 of the 1,878 records without HYP, so only about one in three HYP flags is correct.
 
 > **These operating points are optimistic.** Calibration and thresholds were chosen on the same
-> validation records they are scored on. The unbiased estimate requires applying the frozen
-> calibration and thresholds once to the test split, which no model has been scored on yet.
+> validation records they are scored on. The unbiased estimate comes from applying the frozen
+> calibration and thresholds once to the test split: see [reports/TEST_RUN.md](reports/TEST_RUN.md).
 
 More detail: [docs/CALIBRATION_AND_EVALUATION.md](docs/CALIBRATION_AND_EVALUATION.md).
 
@@ -688,9 +689,11 @@ and the `gradcam_*` figures. Needs the calibration and thresholds from step 1 fo
 - Each command also accepts `--run <run_id>` for a one-off run, but then the tests that compare the
   saved reports with `evaluation.model_run` will fail.
 
-**Final test evaluation: not available yet.** The one-time evaluation on fold 10, which will write
-`reports/metrics.json`, has not been implemented or run. `scripts/run_eval.sh` is a placeholder that
-exits with an error.
+**Final test evaluation: done once.** `scripts/run_eval.sh` (`python -m src.evaluation.evaluate_test`)
+ran the plan committed in [reports/TEST_PLAN.md](reports/TEST_PLAN.md) on fold 10 and wrote
+`reports/metrics.json`. It refuses to open fold 10 again: every opening is recorded in
+`reports/fold10_access_log.jsonl`, and a rerun is only allowed after a documented bug fix in the
+evaluation code. `--rehearse <folder>` runs the same pipeline on fold 9 only.
 
 ## Project structure
 
@@ -712,7 +715,7 @@ ecg-screening/
 │   ├── *.json               # validation reports: baselines, calibration, thresholds, metrics, Grad-CAM
 │   ├── figures/             # all figures
 │   └── runs/                # one CSV and one JSON per training run, plus run comparisons
-├── scripts/                 # run_training.sh; run_eval.sh (placeholder)
+├── scripts/                 # run_training.sh; run_eval.sh (the one-time test evaluation)
 ├── frontend/                # planned React app (placeholder, not set up)
 ├── data/                    # PTB-XL download and cache (created locally, not in git)
 ├── checkpoints/             # trained weights (created locally, not in git)
@@ -737,10 +740,10 @@ Every number and figure in `reports/` is written by a script; nothing in it is t
   (`reports/runs/summary_amplitude_scale_seeds.json`) was generated while its own script was still
   uncommitted.
 
-**Evaluation status.** The test split (fold 10) has not been used to train, tune, select or score any
-model. Everything reported was chosen and measured on the validation split, so it is optimistic. The
-final unbiased estimate, with the frozen model, calibration and thresholds applied once to fold 10,
-has not been implemented yet.
+**Evaluation status.** The test split (fold 10) was never used to train, tune or select anything. It
+was scored once, on 2026-10-19, with the frozen model, calibration and thresholds, following a plan
+committed beforehand ([reports/TEST_PLAN.md](reports/TEST_PLAN.md)): macro AUROC 0.926 [0.918, 0.933], macro AUPRC 0.819 [0.802, 0.833] (95% patient-bootstrap intervals). Results and the
+comparison with validation are in [reports/TEST_RUN.md](reports/TEST_RUN.md).
 
 **Limitations.**
 
@@ -758,7 +761,7 @@ has not been implemented yet.
 - **Grad-CAM is not an explanation.** The maps show model attention at a resolution of about a third
   of a second and do not prove that the model uses medically correct features.
 - **Small experiments.** The amplitude-scaling decision rests on three seeds.
-- **Not yet done:** the band-pass filter comparison, the error analysis and the final test evaluation.
+- **Not yet done:** the band-pass filter comparison.
 
 ## References and licence
 
