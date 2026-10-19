@@ -4,9 +4,10 @@
 
 Both are fit on the training split (folds 1-8) and scored on the validation split (fold 9); the
 results go to reports/baselines_val.json. No setting was tuned against labels or the validation
-split: the gradient boosting uses scikit-learn's defaults, and the beat detector's settings were
-chosen on training records with a label-free check (src/models/rpeak_check.py). This module asks
-the cache for the "train" and "val" rows only and never opens the test split.
+split: the gradient boosting uses scikit-learn's default hyperparameters except early stopping,
+which is off, and the beat detector's settings were chosen on training records with a label-free
+check (src/models/rpeak_check.py). This module asks the cache for the "train" and "val" rows only
+and never opens the test split.
 
 1. Prior baseline. Every record gets each class's frequency in the training split as its probability.
    All records get the same score, so it cannot rank one above another: its AUROC is exactly 0.5

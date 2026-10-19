@@ -28,3 +28,14 @@ def git_state() -> dict[str, str | bool]:
         "commit": _git("rev-parse", "HEAD"),
         "dirty": bool(_git("status", "--porcelain", "--untracked-files=no")),
     }
+
+
+def last_commit_of(path: str) -> str | None:
+    """Full SHA of the last commit that changed `path` (repository-relative), or None if it was never committed."""
+    return _git("log", "-1", "--format=%H", "--", path) or None
+
+
+def uncommitted(paths: list[str]) -> list[str]:
+    """`git status --porcelain` lines for these repository-relative paths: modified, staged or untracked files."""
+    out = _git("status", "--porcelain", "--untracked-files=all", "--", *paths)
+    return out.splitlines() if out else []

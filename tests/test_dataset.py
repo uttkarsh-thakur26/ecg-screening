@@ -17,9 +17,10 @@ from src.data.norm_stats import load_norm_stats, norm_stats_path
 
 B = 64  # training.batch_size in config/default.yaml
 
-# Modules outside src/data/ that may unlock fold 10. Add the final-evaluation script (session 9) and the
-# demo API (session 10) here, deliberately, when they are written. Nothing else belongs on this list.
-MAY_UNLOCK_TEST: set[str] = set()
+# Modules outside src/data/ that may unlock fold 10. The one-time evaluation (session 9) was added in the commit
+# that also committed reports/TEST_PLAN.md, before fold 10 was opened. Add the demo API (session 10) here,
+# deliberately, when it is written. Nothing else belongs on this list.
+MAY_UNLOCK_TEST: set[str] = {"src/evaluation/evaluate_test.py"}
 SPLIT_TOKENS = ("allow_test", "test_folds", "strat_fold")
 
 

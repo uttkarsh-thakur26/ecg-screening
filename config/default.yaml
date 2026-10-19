@@ -246,6 +246,26 @@ error_analysis:               # src/evaluation/error_analysis.py; validation spl
     lead_spacing_mv: 2.0
     time_grid_s: 1.0
 
+final_evaluation:             # src/evaluation/evaluate_test.py: the one-time evaluation on fold 10 (reports/TEST_PLAN.md)
+  plan_file: TEST_PLAN.md     # in paths.reports_dir; must be committed before fold 10 is opened
+  metrics_file: metrics.json  # in paths.reports_dir; the frontend reads only this file
+  # In paths.reports_dir: one JSON line per opening of fold 10, appended just before it is opened (the first line
+  # creates the file), so even a run that crashes afterwards is on record. A rerun needs --rerun-reason.
+  access_log: fold10_access_log.jsonl
+  # Nothing under these paths may be modified or untracked when fold 10 is opened, so the commit recorded in
+  # metrics.json holds the code, config, tests and plan that ran.
+  guarded_paths: [src, config, scripts, tests, reports/TEST_PLAN.md]
+  bootstrap:                  # fixed in TEST_PLAN.md before fold 10 was opened
+    resamples: 1000
+    ci_level: 0.95            # percentile interval: the 2.5th and 97.5th percentiles of the resampled values
+    seed: 42                  # numpy default_rng seed of the resampling
+  figures:                    # in paths.figures_dir; dpi and panel size from evaluation.figures
+    roc: roc_curves_test.png
+    pr: pr_curves_test.png
+    confusion_max_f1: confusion_max_f1_test.png
+    confusion_high_sensitivity: confusion_high_sensitivity_test.png
+    reliability: reliability_test.png
+
 explain:                      # Grad-CAM, spec section 5; src/explain/gradcam_val.py uses the validation split only
   report_file: gradcam_val.json   # in paths.reports_dir
   lead: II                    # drawn under the band; the map is per time position, shared by all 12 leads

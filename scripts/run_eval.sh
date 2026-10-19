@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Evaluate the frozen model and write reports/metrics.json. Not implemented yet.
+# The one-time evaluation of the frozen release model on fold 10 (reports/TEST_PLAN.md); writes reports/metrics.json.
+# It refuses to run twice; see the module docstring for the rehearsal on fold 9 and the bug-fix rerun.
 set -euo pipefail
-echo "run_eval.sh is not implemented yet" >&2
-exit 1
+cd "$(dirname "$0")/.."
+python -m src.evaluation.evaluate_test "$@"
