@@ -1,0 +1,173 @@
+{
+  "description": "Seed-to-seed spread of the committed config on the validation split (fold 9): each run's best checkpoint, uncalibrated sigmoid outputs (calibration is strictly increasing, so AUROC and AUPRC are the same either way). Training noise only, not an interval over patients. Each run's epoch was chosen on this split, so the values are slightly optimistic.",
+  "generated_by": "python -m src.evaluation.seed_stability",
+  "generated_at": "2026-10-19T08:44:32+00:00",
+  "git": {
+    "commit": "b67124b0e35b0010d26df1196d19c88451cb0680",
+    "dirty": false
+  },
+  "split": "val",
+  "records": 2146,
+  "patients": 1917,
+  "release_run": "20261017-215633_no-amp-scale",
+  "std": "sample standard deviation (ddof=1) over 3 seeds",
+  "code_tree": "f36126dc235166a4cda81c800e41b99cde9b9c7b",
+  "classes": [
+    "NORM",
+    "MI",
+    "STTC",
+    "CD",
+    "HYP"
+  ],
+  "runs": [
+    {
+      "run_id": "20261017-215633_no-amp-scale",
+      "seed": 42,
+      "best_epoch": 19,
+      "epochs_run": 27,
+      "training_commit": "46330c162bb2ba7aede503283be3e4f3553e59c3",
+      "macro": {
+        "auroc": 0.9289820416002492,
+        "auprc": 0.8162450034287725
+      },
+      "per_class": {
+        "NORM": {
+          "auroc": 0.9473274691073101,
+          "auprc": 0.9314724014154737
+        },
+        "MI": {
+          "auroc": 0.9304725335547254,
+          "auprc": 0.8427599237160717
+        },
+        "STTC": {
+          "auroc": 0.9298961493800801,
+          "auprc": 0.7885375328761963
+        },
+        "CD": {
+          "auroc": 0.9283617519837992,
+          "auprc": 0.8470326564138826
+        },
+        "HYP": {
+          "auroc": 0.908852303975331,
+          "auprc": 0.6714225027222376
+        }
+      }
+    },
+    {
+      "run_id": "20261017-224121_off-s43",
+      "seed": 43,
+      "best_epoch": 14,
+      "epochs_run": 22,
+      "training_commit": "3a6eccf7785d8df65db4f8018958f88c3425ec11",
+      "macro": {
+        "auroc": 0.9272200742132387,
+        "auprc": 0.8116577257534854
+      },
+      "per_class": {
+        "NORM": {
+          "auroc": 0.9419265784834777,
+          "auprc": 0.9218625138699515
+        },
+        "MI": {
+          "auroc": 0.9249654074996541,
+          "auprc": 0.8330708295401418
+        },
+        "STTC": {
+          "auroc": 0.9301068472112971,
+          "auprc": 0.7895297938095592
+        },
+        "CD": {
+          "auroc": 0.9307062141707811,
+          "auprc": 0.8482442708295703
+        },
+        "HYP": {
+          "auroc": 0.9083953237009837,
+          "auprc": 0.6655812207182041
+        }
+      }
+    },
+    {
+      "run_id": "20261017-225026_off-s44",
+      "seed": 44,
+      "best_epoch": 13,
+      "epochs_run": 21,
+      "training_commit": "3a6eccf7785d8df65db4f8018958f88c3425ec11",
+      "macro": {
+        "auroc": 0.9275733983666369,
+        "auprc": 0.8164294629408639
+      },
+      "per_class": {
+        "NORM": {
+          "auroc": 0.9481433614235915,
+          "auprc": 0.9327308656939669
+        },
+        "MI": {
+          "auroc": 0.9232242516489092,
+          "auprc": 0.8254629742362806
+        },
+        "STTC": {
+          "auroc": 0.9324420815072856,
+          "auprc": 0.792312709087335
+        },
+        "CD": {
+          "auroc": 0.9308616143261812,
+          "auprc": 0.8622170646848172
+        },
+        "HYP": {
+          "auroc": 0.903195682927217,
+          "auprc": 0.6694237010019196
+        }
+      }
+    }
+  ],
+  "summary": {
+    "macro_auroc": {
+      "mean": 0.9279251713933748,
+      "std": 0.000932169761887555
+    },
+    "macro_auprc": {
+      "mean": 0.814777397374374,
+      "std": 0.0027032886628204013
+    },
+    "NORM_auroc": {
+      "mean": 0.9457991363381265,
+      "std": 0.003378453539882242
+    },
+    "NORM_auprc": {
+      "mean": 0.9286885936597974,
+      "std": 0.005944952233455473
+    },
+    "MI_auroc": {
+      "mean": 0.9262207309010962,
+      "std": 0.0037836854095183088
+    },
+    "MI_auprc": {
+      "mean": 0.8337645758308313,
+      "std": 0.008669318212148839
+    },
+    "STTC_auroc": {
+      "mean": 0.9308150260328875,
+      "std": 0.001413004080530623
+    },
+    "STTC_auprc": {
+      "mean": 0.7901266785910303,
+      "std": 0.001957087744085715
+    },
+    "CD_auroc": {
+      "mean": 0.9299765268269206,
+      "std": 0.0014005929628402578
+    },
+    "CD_auprc": {
+      "mean": 0.8524979973094234,
+      "std": 0.008438732449761571
+    },
+    "HYP_auroc": {
+      "mean": 0.9068144368678439,
+      "std": 0.003142251231981281
+    },
+    "HYP_auprc": {
+      "mean": 0.6688091414807871,
+      "std": 0.0029687381859002317
+    }
+  }
+}
