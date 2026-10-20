@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { RecordSummary } from './api'
-import { searchRecords } from './records'
+import { commonShape, searchRecords } from './records'
 
 const ids = (records: RecordSummary[]) => records.map((r) => r.id)
 const records: RecordSummary[] = ['19', '9', '1900', '90', '219', '29'].map((id) => ({
@@ -28,5 +28,17 @@ describe('searchRecords', () => {
     const before = ids(records)
     searchRecords(records, '9')
     expect(ids(records)).toEqual(before)
+  })
+})
+
+describe('commonShape', () => {
+  it('is the duration and rate every record shares', () => {
+    expect(commonShape(records)).toEqual({ duration_s: 10, sampling_rate: 100 })
+  })
+
+  it('is null when the records differ, or there are none', () => {
+    expect(commonShape([...records, { id: '7', duration_s: 10, sampling_rate: 500 }])).toBeNull()
+    expect(commonShape([...records, { id: '7', duration_s: 5, sampling_rate: 100 }])).toBeNull()
+    expect(commonShape([])).toBeNull()
   })
 })

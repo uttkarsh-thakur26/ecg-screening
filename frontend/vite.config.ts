@@ -58,8 +58,9 @@ export default defineConfig({
   preview: server,
   test: {
     projects: [
-      // Pure functions only; no network.
-      { extends: true, test: { name: 'unit', include: ['src/**/*.test.ts'] } },
+      // Pure functions only; no network. css.include: the contrast test reads the design tokens in src/index.css
+      // (imported ?raw), which Vitest would otherwise replace with an empty string.
+      { extends: true, test: { name: 'unit', include: ['src/**/*.test.ts'], css: { include: [/index\.css/] } } },
       // The client against the running API (python -m src.api.main): every response must pass the client's schemas.
       { extends: true, test: { name: 'contract', include: ['src/**/*.contract.ts'], testTimeout: 30_000 } },
     ],

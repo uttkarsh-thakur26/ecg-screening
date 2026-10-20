@@ -12,7 +12,7 @@ interface Props {
  */
 export function ApiErrorPanel({ title, error, onRetry }: Props) {
   return (
-    <div role="alert" className="rounded-lg border border-l-4 border-line border-l-ink bg-surface p-2">
+    <div role="alert" className="rounded-lg border border-l-4 border-line border-l-slate bg-surface p-2">
       <p className="font-medium">{title}</p>
       <ErrorBody error={error} />
       {onRetry && (

@@ -1,21 +1,28 @@
 @import "tailwindcss";
 
 /* Design tokens (PROJECT_SPEC.md section 7). Tailwind's default palette, fonts and weights are removed, so a class
-   outside these tokens (bg-blue-500, font-bold) generates no CSS at all and cannot slip a new colour or weight in. */
-@theme {
+   outside these tokens (bg-blue-500, font-bold) generates no CSS at all and cannot slip a new colour or weight in.
+   "static": every token is written to :root as a CSS variable, used by a class or not, because the ECG strip is drawn
+   on a canvas and reads its colours from these variables (src/components/EcgStrip.tsx). */
+@theme static {
   --color-*: initial;
   --color-canvas: #fafafa;        /* page background */
   --color-surface: #ffffff;       /* cards */
   --color-ink: #1a1a1a;           /* text */
-  --color-ink-muted: #525252;     /* secondary text, 7.4:1 on the canvas */
+  --color-ink-muted: #525252;     /* secondary text: 7.5:1 on the canvas, 7.8:1 on white, 6.2:1 on the line grey */
   --color-line: #e5e5e5;          /* borders and dividers */
   --color-line-strong: #a3a3a3;   /* input borders, the drop zone's outline */
   --color-accent: #0f766e;        /* the one accent: muted clinical teal */
   --color-accent-strong: #115e59; /* the accent when pressed or hovered */
-  /* Semantic colours, for results only. */
+  /* Semantic colours. Amber is for results only: a flagged class. It is 3.1:1 on white, too low for small text
+     (WCAG AA asks 4.5:1), so it fills bars and dots and never colours text. Slate is a not-flagged class and the
+     frame of an error card; it is 4.6:1 on the canvas and 4.8:1 on white, so it may colour text. There is no red:
+     the spec's red is for "high-confidence abnormal", and no rule in the model or the API defines that. */
   --color-flagged: #d97706;       /* amber: flagged */
-  --color-abnormal: #dc2626;      /* red: high-confidence abnormal */
-  --color-normal: #64748b;        /* slate: normal */
+  --color-slate: #64748b;         /* slate: not flagged, NORM's bar, error card frames */
+  /* The ECG strip's grid, light so that it never competes with the trace. */
+  --color-grid-minor: #efefef;    /* every 0.04 s and 0.1 mV */
+  --color-grid-major: #d6d6d6;    /* every 0.2 s and 0.5 mV */
 
   /* One family, bundled with the app (@fontsource/inter, imported in main.tsx), so it works offline. */
   --font-*: initial;
@@ -27,6 +34,13 @@
   --font-weight-normal: 400;
   --font-weight-medium: 500;
   --font-weight-semibold: 600;
+
+  /* The one motion in the app: results fade in over 150 ms when they load. */
+  --animate-fade-in: fade-in 150ms ease-out;
+  @keyframes fade-in {
+    from { opacity: 0; }
+    to { opacity: 1; }
+  }
 
   /* 8px spacing scale: p-1 is 8px, p-2 16px, p-3 24px, and so on, for padding, margins, gaps and sizes. */
   --spacing: 0.5rem;

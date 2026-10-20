@@ -4,6 +4,7 @@ import { ApiErrorPanel } from '../components/ApiErrorPanel'
 import { RecordPicker, type RecordsState } from '../components/RecordPicker'
 import { UploadZone } from '../components/UploadZone'
 import { ApiError, getRecords, predictRecord, predictUpload } from '../lib/api'
+import { commonShape } from '../lib/records'
 import type { ResultState } from '../lib/resultState'
 import { EMPTY_UPLOAD, addFiles, type UploadPair } from '../lib/uploads'
 import { paths } from '../paths'
@@ -108,6 +109,9 @@ export function SelectPage() {
     }
   }
 
+  // Every test record has the same length and rate, so the caption says them once instead of on every row.
+  const shape = records.status === 'ready' ? commonShape(records.records) : null
+
   const canRun = selectedId !== null || (upload.hea !== null && upload.dat !== null)
   const buttonLabel = running
     ? selectedId !== null ? `Screening record ${selectedId}…` : 'Screening the uploaded record…'
@@ -136,9 +140,12 @@ export function SelectPage() {
           <span aria-hidden className="h-px flex-1 bg-line" />
         </div>
         <p className="mt-2 mb-2 text-sm">
-          These records are from the held-out test set. The model never saw them during training.
+          These records are from the held-out test set
+          {shape && `, each ${shape.duration_s} s at ${shape.sampling_rate} Hz`}. The model never saw them during
+          training.
         </p>
         <RecordPicker state={records} query={query} selectedId={selectedId} disabled={running}
+                      showShape={records.status === 'ready' && shape === null}
                       onQuery={setQuery} onSelect={selectRecord} onRetry={retryRecords} />
       </section>
 

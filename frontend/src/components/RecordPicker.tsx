@@ -13,6 +13,7 @@ interface Props {
   state: RecordsState
   query: string
   selectedId: string | null
+  showShape: boolean // each row shows its duration and rate (when they differ; else the caption says them once)
   disabled: boolean
   onQuery: (query: string) => void
   onSelect: (id: string) => void
@@ -20,7 +21,8 @@ interface Props {
 }
 
 /** The held-out test records from GET /api/records, searchable by id. One can be selected. */
-export function RecordPicker({ state, query, selectedId, disabled, onQuery, onSelect, onRetry }: Props) {
+export function RecordPicker({ state, query, selectedId, showShape, disabled, onQuery, onSelect,
+                              onRetry }: Props) {
   const searchId = useId()
   const records = state.status === 'ready' ? state.records : null
   const matches = useMemo(() => (records ? searchRecords(records, query) : []), [records, query])
@@ -86,9 +88,11 @@ export function RecordPicker({ state, query, selectedId, disabled, onQuery, onSe
                   />
                   {r.id}
                 </span>
-                <span className="text-sm text-ink-muted">
-                  {r.duration_s} s · {r.sampling_rate} Hz
-                </span>
+                {showShape && (
+                  <span className="text-sm text-ink-muted">
+                    {r.duration_s} s · {r.sampling_rate} Hz
+                  </span>
+                )}
               </label>
             ))
           )}
