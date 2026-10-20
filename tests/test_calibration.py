@@ -363,7 +363,9 @@ def test_calibration_recomputed_from_the_checkpoint_leaves_auroc_unchanged(cfg, 
                             lambda runs_dir, rid: load_run(runs_dir, rid) | {"checkpoint": manifest["release_checkpoint"]["path"]})
 
     preds = predict_validation(cfg, run_id)
-    loaded = load_calibration(calibration_path(cfg), preds.run, preds.run["classes"], ecg_id_digest(preds.ecg_ids))
+    # The calibration is checked against the run record as committed (its own checkpoint path), whichever file the
+    # identical weights were read from.
+    loaded = load_calibration(calibration_path(cfg), run, run["classes"], ecg_id_digest(preds.ecg_ids))
     assert loaded["sha256"] == saved["calibration_sha256"]
     classes = preds.run["classes"]
     calibrated = calibrated_probabilities(preds.logits, loaded["calibrators"], classes)
