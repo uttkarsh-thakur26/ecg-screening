@@ -3,8 +3,8 @@
 import { describe, expect, it } from 'vitest'
 import type { Signal } from './api'
 import {
-  GRID_STEPS, MARGIN, SCALE, attentionSpan, minorSpacing, sampleTime, stripLayout, stripProblem, timeGrid, voltageGrid,
-  voltageWindow, xOf, yOf,
+  GRID_STEPS, MARGIN, SCALE, attentionSpan, leadLabel, minorSpacing, sampleTime, stripLayout, stripProblem, timeGrid,
+  voltageGrid, voltageWindow, xOf, yOf,
 } from './ecgPlot'
 
 function signal(leads: string[], samples: number, samplingRate = 100): Signal {
@@ -30,6 +30,23 @@ describe('stripProblem', () => {
     expect(stripProblem(signal(['I', 'III'], 10), new Array<number>(10).fill(0)))
       .toBe('The signal has no lead II; its leads are I, III')
     expect(stripProblem(signal(['II'], 10, 0), [])).toBe("The signal's sampling rate is 0 Hz")
+  })
+
+  it('refuses a lead that is not one of the 12 standard leads', () => {
+    expect(stripProblem(signal(['II', 'AVR', 'X1'], 10), new Array<number>(10).fill(0)))
+      .toBe('The signal has leads that are not standard ECG leads: X1')
+  })
+})
+
+describe('leadLabel', () => {
+  it("writes the API's lead names in their clinical spelling", () => {
+    const api = ['I', 'II', 'III', 'AVR', 'AVL', 'AVF', 'V1', 'V2', 'V3', 'V4', 'V5', 'V6'] // as PTB-XL names them
+    expect(api.map(leadLabel)).toEqual(['I', 'II', 'III', 'aVR', 'aVL', 'aVF', 'V1', 'V2', 'V3', 'V4', 'V5', 'V6'])
+    expect(leadLabel('aVF')).toBe('aVF')
+  })
+
+  it('throws for a name that is not a standard lead', () => {
+    expect(() => leadLabel('V7')).toThrow('"V7" is not one of the 12 standard ECG leads')
   })
 })
 

@@ -1,8 +1,8 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import type { Signal } from '../lib/api'
 import {
-  DEFAULT_LEAD, GRID_STEPS, MARGIN, MIN_MINOR_SPACING_PX, SCALE, attentionSpan, minorSpacing, sampleTime, stripLayout,
-  timeGrid, voltageGrid, voltageWindow, xOf, yOf, type StripLayout,
+  DEFAULT_LEAD, GRID_STEPS, MARGIN, MIN_MINOR_SPACING_PX, SCALE, attentionSpan, leadLabel, minorSpacing, sampleTime,
+  stripLayout, timeGrid, voltageGrid, voltageWindow, xOf, yOf, type StripLayout,
 } from '../lib/ecgPlot'
 
 /** Opacity of the attention shade where the map is 1, its peak; 0 where the map is 0. Soft, so the grid and the trace
@@ -17,13 +17,15 @@ interface Props {
   attention: readonly number[] // one value per sample, in [0, 1]
   attentionClass: string
   attentionRawPeak: number     // 0: Grad-CAM found no time that raised the class score, so the map is all zeros
+  showAttention: boolean       // false when no abnormal category is flagged: no band, and a line saying so
 }
 
 /**
  * One lead of the signal on a standard ECG grid (time in seconds, voltage in mV), with the model's attention map
- * shaded behind the trace on the same time axis. Lead II first; any of the signal's leads can be chosen.
+ * shaded behind the trace on the same time axis when a category is flagged. Lead II first; any of the signal's leads
+ * can be chosen. Leads are named in their clinical spelling (aVR, not the API's AVR).
  */
-export function EcgStrip({ signal, attention, attentionClass, attentionRawPeak }: Props) {
+export function EcgStrip({ signal, attention, attentionClass, attentionRawPeak, showAttention }: Props) {
   const [lead, setLead] = useState(DEFAULT_LEAD)
   const [width, setWidth] = useState(0)
   const [fontLoaded, setFontLoaded] = useState(false)
@@ -58,8 +60,10 @@ export function EcgStrip({ signal, attention, attentionClass, attentionRawPeak }
   }, [])
 
   useEffect(() => {
-    if (canvas.current !== null && layout !== null) drawStrip(canvas.current, layout, trace, attention, lead)
-  }, [layout, trace, attention, lead, fontLoaded])
+    if (canvas.current !== null && layout !== null) {
+      drawStrip(canvas.current, layout, trace, showAttention ? attention : null, leadLabel(lead))
+    }
+  }, [layout, trace, attention, showAttention, lead, fontLoaded])
 
   const seconds = trace.length / signal.sampling_rate
   return (
@@ -77,7 +81,7 @@ export function EcgStrip({ signal, attention, attentionClass, attentionRawPeak }
                        focus-visible:outline-accent aria-pressed:border-accent aria-pressed:bg-accent
                        aria-pressed:text-surface"
           >
-            {name}
+            {leadLabel(name)}
           </button>
         ))}
       </div>
@@ -86,24 +90,29 @@ export function EcgStrip({ signal, attention, attentionClass, attentionRawPeak }
         <canvas
           ref={canvas}
           role="img"
-          aria-label={`ECG lead ${lead}: ${seconds} seconds at ${signal.sampling_rate} Hz, in millivolts, with the ` +
-                      `model's attention for ${attentionClass} shaded behind the trace`}
+          aria-label={`ECG lead ${leadLabel(lead)}: ${seconds} seconds at ${signal.sampling_rate} Hz, in millivolts` +
+                      (showAttention ? `, with the model's attention for ${attentionClass} shaded behind the trace`
+                                     : '')}
           className="block w-full"
           style={{ height: layout?.height }}
         />
       </div>
 
       <div className="mt-1 flex flex-wrap items-center justify-between gap-x-3 gap-y-0.5 text-sm">
-        <p className="flex items-center gap-1">
-          <span aria-hidden className="inline-block h-1.5 w-3 shrink-0 rounded-sm bg-accent/30" />
-          Model attention for {attentionClass}, not a clinical rationale
-        </p>
+        {showAttention ? (
+          <p className="flex items-center gap-1">
+            <span aria-hidden className="inline-block h-1.5 w-3 shrink-0 rounded-sm bg-accent/30" />
+            Model attention for {attentionClass}, not a clinical rationale
+          </p>
+        ) : (
+          <p>No abnormal category flagged; attention not shown.</p>
+        )}
         <p className="text-ink-muted">
           Grid {GRID_STEPS.minorSeconds} s × {GRID_STEPS.minorMv} mV, bold every {GRID_STEPS.majorSeconds} s
           and {GRID_STEPS.majorMv} mV · {SCALE.paperSpeedMmPerSecond} mm/s, {SCALE.gainMmPerMv} mm/mV
         </p>
       </div>
-      {attentionRawPeak === 0 && (
+      {showAttention && attentionRawPeak === 0 && (
         <p className="mt-0.5 text-sm text-ink-muted">
           Grad-CAM found no time in this record that raised the {attentionClass} score, so nothing is shaded.
         </p>
@@ -136,8 +145,9 @@ function axisNumber(value: number): string {
   return value < 0 ? `−${Math.abs(value)}` : `${value}`
 }
 
+/** attention: null draws no band. lead: the name drawn in the corner, already in its clinical spelling. */
 function drawStrip(canvas: HTMLCanvasElement, layout: StripLayout, trace: readonly number[],
-                   attention: readonly number[], lead: string) {
+                   attention: readonly number[] | null, lead: string) {
   const ctx = canvas.getContext('2d')
   if (ctx === null) throw new Error('This browser cannot draw the ECG: the canvas has no 2D context')
   const dpr = window.devicePixelRatio
@@ -158,7 +168,7 @@ function drawStrip(canvas: HTMLCanvasElement, layout: StripLayout, trace: readon
 
   // 1. The attention map, behind everything else. Value i shades the time of sample i (attentionSpan).
   ctx.fillStyle = themeColour('accent')
-  for (const [i, value] of attention.entries()) {
+  for (const [i, value] of (attention ?? []).entries()) {
     if (value <= 0) continue
     const [start, end] = attentionSpan(i, samples, samplingRate)
     const x0 = snap(xOf(layout, start))

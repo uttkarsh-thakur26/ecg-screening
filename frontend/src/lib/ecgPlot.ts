@@ -9,6 +9,18 @@ import type { Signal } from './api'
 /** The standard rhythm lead (PROJECT_SPEC.md section 7), shown first. */
 export const DEFAULT_LEAD = 'II'
 
+/** The 12 leads in their clinical spelling. PTB-XL's files, and so the API, write the augmented limb leads in
+ *  capitals (AVR, AVL, AVF); the screen shows them as clinicians write them. */
+const CLINICAL_LEADS = ['I', 'II', 'III', 'aVR', 'aVL', 'aVF', 'V1', 'V2', 'V3', 'V4', 'V5', 'V6'] as const
+
+/** A lead's name as the API sends it -> its clinical spelling: "AVR" -> "aVR", "II" -> "II". Throws for a name that
+ *  is not one of the 12 standard leads (stripProblem checks the signal's leads first). */
+export function leadLabel(name: string): string {
+  const label = CLINICAL_LEADS.find((l) => l.toUpperCase() === name.toUpperCase())
+  if (label === undefined) throw new Error(`${JSON.stringify(name)} is not one of the 12 standard ECG leads`)
+  return label
+}
+
 /**
  * The strip's scale, in ECG-machine terms: paper speed 25 mm/s and gain 20 mm/mV ("double standard", a setting ECG
  * machines offer beside the 10 mm/mV standard). The 10-second strip fills the screen's width, which makes it about
@@ -83,6 +95,8 @@ export function stripProblem(signal: Signal, attention: readonly number[]): stri
   if (!signal.leads.includes(DEFAULT_LEAD)) {
     return `The signal has no lead ${DEFAULT_LEAD}; its leads are ${signal.leads.join(', ')}`
   }
+  const unknown = signal.leads.filter((name) => !CLINICAL_LEADS.some((l) => l.toUpperCase() === name.toUpperCase()))
+  if (unknown.length > 0) return `The signal has leads that are not standard ECG leads: ${unknown.join(', ')}`
   return null
 }
 

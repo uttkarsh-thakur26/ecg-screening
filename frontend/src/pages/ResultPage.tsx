@@ -7,7 +7,7 @@ import { ApiError, getSignal, getTruth, predictRecord, type Prediction, type Rec
          type Truth, type UploadPrediction } from '../lib/api'
 import { stripProblem } from '../lib/ecgPlot'
 import { readResultState, type ResultState } from '../lib/resultState'
-import { agreement, presentByClass, summaryLine, truthProblem } from '../lib/results'
+import { agreement, attentionShown, presentByClass, summaryLine, truthProblem } from '../lib/results'
 import { paths } from '../paths'
 
 type Load<T> = { status: 'loading' } | { status: 'ready'; value: T } | { status: 'error'; error: unknown }
@@ -195,7 +195,7 @@ function Results({ prediction, signal, present, reveal }:
       <section aria-label="ECG" className="rounded-lg border border-line bg-surface p-2">
         {problem === null ? (
           <EcgStrip signal={signal} attention={prediction.attention} attentionClass={prediction.attention_class}
-                    attentionRawPeak={prediction.attention_raw_peak} />
+                    attentionRawPeak={prediction.attention_raw_peak} showAttention={attentionShown(prediction)} />
         ) : (
           <ApiErrorPanel title="The signal and the attention map from the API cannot be drawn together"
                          error={problem} />

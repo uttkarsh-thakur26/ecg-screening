@@ -8,6 +8,12 @@ export function summaryLine(prediction: Pick<Prediction, 'summary' | 'operating_
   return `${prediction.summary} at the ${prediction.operating_point.replaceAll('_', '-')} operating point.`
 }
 
+/** The attention map is drawn only when the API flagged at least one abnormal category. With nothing flagged, a band
+ *  for the most probable abnormal class would point at evidence for a finding the screen does not report. */
+export function attentionShown(prediction: Pick<Prediction, 'flagged_count'>): boolean {
+  return prediction.flagged_count > 0
+}
+
 /** Why these labels cannot be shown beside this prediction, or null when they can: they must be the labels of the
  *  same record, for the same classes in the same order, and the list of labels must agree with the per-class rows. */
 export function truthProblem(recordId: string, predictions: readonly { class: string }[], truth: Truth): string | null {

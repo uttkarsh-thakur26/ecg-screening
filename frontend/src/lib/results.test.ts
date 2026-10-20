@@ -2,7 +2,7 @@
 // probability or other model output is made up.
 import { describe, expect, it } from 'vitest'
 import type { Truth } from './api'
-import { agreement, presentByClass, summaryLine, truthProblem } from './results'
+import { agreement, attentionShown, presentByClass, summaryLine, truthProblem } from './results'
 
 const classes = ['NORM', 'MI', 'STTC', 'CD', 'HYP'].map((c) => ({ class: c }))
 
@@ -15,6 +15,14 @@ describe('summaryLine', () => {
   it("is the API's summary at the API's operating point", () => {
     expect(summaryLine({ summary: '2 of 4 abnormal categories flagged', operating_point: 'high_sensitivity' }))
       .toBe('2 of 4 abnormal categories flagged at the high-sensitivity operating point.')
+  })
+})
+
+describe('attentionShown', () => {
+  it('shows the attention map only when at least one abnormal category is flagged', () => {
+    expect(attentionShown({ flagged_count: 0 })).toBe(false)
+    expect(attentionShown({ flagged_count: 1 })).toBe(true)
+    expect(attentionShown({ flagged_count: 4 })).toBe(true)
   })
 })
 

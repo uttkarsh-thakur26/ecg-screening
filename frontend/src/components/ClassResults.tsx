@@ -8,7 +8,7 @@ interface Props {
 }
 
 const AGREEMENT_TEXT: Record<Agreement, string> = {
-  'agrees': 'flag matches',
+  'agrees': 'agrees',
   'missed': 'missed: not flagged',
   'false-flag': 'flagged, not in labels',
 }
