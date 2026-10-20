@@ -67,9 +67,11 @@ export function RecordPicker({ state, query, selectedId, showShape, disabled, on
             <p className="p-2 text-sm text-ink-muted">No record ID contains &ldquo;{query.trim()}&rdquo;.</p>
           ) : (
             matches.map((r) => (
+              // relative: the visually hidden radio (sr-only, absolutely positioned) stays inside its row and the
+              // scrolling list. Without it, each of the 2,158 radios lands outside the list and stretches the page.
               <label
                 key={r.id}
-                className="flex cursor-pointer items-center justify-between gap-2 border-b border-line px-2 py-1
+                className="relative flex cursor-pointer items-center justify-between gap-2 border-b border-line px-2 py-1
                            last:border-b-0 hover:bg-canvas
                            has-checked:bg-accent/10 has-checked:text-accent
                            has-checked:shadow-[inset_4px_0_0_var(--color-accent)]

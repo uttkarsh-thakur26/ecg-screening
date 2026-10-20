@@ -4,8 +4,8 @@ import { ReportFigure } from '../components/ReportFigure'
 import { ApiError, getMetrics, type ClassPoint, type Estimate, type MacroPoint, type MetricsReport } from '../lib/api'
 import { formatCount, formatProbability } from '../lib/format'
 import {
-  classLabel, evaluationLine, formatDifference, formatInterval, formatMetric, formatPercent, intervalNote, limitations,
-  perClass, seedLine,
+  ciPercent, classLabel, evaluationLine, formatDifference, formatInterval, formatMetric, formatPercent, intervalNote,
+  limitations, perClass, seedLine,
 } from '../lib/performance'
 
 type State =
@@ -110,6 +110,7 @@ function Header({ m }: { m: MetricsReport }) {
   return (
     <header className="mt-1">
       <p className="text-lg font-medium">{evaluationLine(m)}</p>
+      <Headline m={m} />
       <dl className="mt-2 grid grid-cols-2 gap-x-3 gap-y-2 rounded-lg border border-line bg-surface p-2
                      sm:grid-cols-3 lg:grid-cols-6">
         <Fact term="Dataset">{m.dataset.name} {m.dataset.version}</Fact>
@@ -127,6 +128,37 @@ function Header({ m }: { m: MetricsReport }) {
       <p className="mt-1 text-sm text-ink-muted">{m.description}</p>
       <p className="mt-0.5 text-sm text-ink-muted">{intervalNote(m)}</p>
     </header>
+  )
+}
+
+/** The three numbers that sum up the test result, each read from the report: ranking, the screening point's
+ *  sensitivity, and calibration. */
+function Headline({ m }: { m: MetricsReport }) {
+  const auroc = m.ranking.macro.auroc
+  const sensitivity = m.operating_points.high_sensitivity.macro_abnormal.sensitivity
+  const ece = m.calibration_error.macro.calibrated
+  return (
+    // Each tile spans three rows of the strip's grid (label, value, detail), so the values line up across tiles
+    // whatever the length of their labels.
+    <div className="mt-2 grid gap-x-2 gap-y-0.5 sm:grid-cols-3">
+      <Stat label={`Macro AUROC, ${allClasses(m)}`} value={formatMetric(auroc.value)}
+            detail={`${ciPercent(m)} interval ${formatInterval(auroc)}`} />
+      <Stat label={`Macro sensitivity at the high-sensitivity point, ${abnormalClasses(m)}`}
+            value={formatMetric(sensitivity.value)} detail={`${ciPercent(m)} interval ${formatInterval(sensitivity)}`} />
+      <Stat label="Macro calibration error (ECE), calibrated" value={formatMetric(ece.value)}
+            detail="Lower is better; point value (see Calibration)" />
+    </div>
+  )
+}
+
+function Stat({ label, value, detail }: { label: string; value: string; detail: string }) {
+  return (
+    <div className="row-span-3 mb-1.5 grid grid-rows-subgrid gap-0.5 rounded-lg border border-line bg-surface p-2
+                    sm:mb-0">
+      <p className="text-sm text-ink-muted">{label}</p>
+      <p className="self-end text-3xl font-semibold tracking-tight">{value}</p>
+      <p className="text-sm text-ink-muted">{detail}</p>
+    </div>
   )
 }
 

@@ -56,6 +56,9 @@
     /* Numbers in tabular figures everywhere, so columns of digits line up. */
     font-variant-numeric: tabular-nums;
     -webkit-font-smoothing: antialiased;
+    /* The footer is fixed to the bottom of the window (AppShell sets its measured height): anything scrolled into
+       view or focused stops above it instead of behind it. */
+    scroll-padding-bottom: var(--footer-height);
   }
 
   b,
