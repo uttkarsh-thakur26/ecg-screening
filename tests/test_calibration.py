@@ -340,14 +340,29 @@ def test_saved_thresholds_are_post_calibration_and_name_this_calibration(saved):
         assert thresholds["calibration"]["per_class"][c] == report["per_class"][c]["calibrator"]
 
 
-def test_calibration_recomputed_from_the_checkpoint_leaves_auroc_unchanged(cfg, saved):
+def test_calibration_recomputed_from_the_checkpoint_leaves_auroc_unchanged(cfg, saved, monkeypatch):
     """Re-predict fold 9 with the frozen checkpoint, apply reports/calibration.json, and compare per-class AUROC.
 
-    Opens only the validation split. Needs the checkpoint and CUDA, like evaluate_val.
+    Opens only the validation split. Needs the checkpoint and CUDA, like evaluate_val. The run's own best.pt is not
+    committed; where it is missing (a fresh clone) the committed checkpoints/release.pt is used, which load_release
+    proves to be a byte copy of it (the manifest pins both files to the same SHA-256).
     """
+    from src.evaluation import evaluate_val
     from src.evaluation.evaluate_val import calibration_path, predict_validation
+    from src.evaluation.release import load_release
+    from src.training.compare_runs import load_run
 
-    preds = predict_validation(cfg, cfg["evaluation"]["model_run"])
+    run_id = cfg["evaluation"]["model_run"]
+    run = load_run(project_path(cfg["paths"]["runs_dir"]), run_id)
+    if not project_path(run["checkpoint"]).is_file():
+        manifest = load_release(cfg)  # raises unless release.pt has the pinned SHA-256
+        assert manifest["run"]["run_id"] == run_id
+        assert manifest["source_checkpoint"]["path"] == run["checkpoint"]
+        assert manifest["source_checkpoint"]["sha256"] == manifest["release_checkpoint"]["sha256"]
+        monkeypatch.setattr(evaluate_val, "load_run",
+                            lambda runs_dir, rid: load_run(runs_dir, rid) | {"checkpoint": manifest["release_checkpoint"]["path"]})
+
+    preds = predict_validation(cfg, run_id)
     loaded = load_calibration(calibration_path(cfg), preds.run, preds.run["classes"], ecg_id_digest(preds.ecg_ids))
     assert loaded["sha256"] == saved["calibration_sha256"]
     classes = preds.run["classes"]

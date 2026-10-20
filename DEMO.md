@@ -35,8 +35,8 @@ Point at the line under the ECG, then click **Reveal ground truth**.
 
 **Say:** "This is a held-out test record the model has never seen. It scores NORM at 0.949 and every
 abnormal category far below its threshold, so nothing is flagged, and because nothing is flagged we
-deliberately show no attention band." After the reveal: "The dataset's cardiologists labelled it
-normal, so all four flags agree with the label."
+deliberately show no attention band." After the reveal: "The dataset labels it normal, so all four
+flags agree with the label."
 
 ## 2. Record 63: myocardial infarction, correctly flagged
 

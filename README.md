@@ -116,7 +116,7 @@ the repository into an empty folder and following this section step by step.
 | [Git](https://git-scm.com/download/win) | to clone the repository |
 | [Python 3.11](https://www.python.org/downloads/) | with the `py` launcher (the installer's default) |
 | [Node.js 24](https://nodejs.org/) | includes `npm`; only for the app's frontend |
-| Disk space | about 6 GB: PyTorch with CUDA about 4 GB, the dataset 0.55 GB, its cache 1.05 GB |
+| Disk space | about 6 GB: the Python environment 4.5 GB (mostly PyTorch with CUDA), the dataset 0.5 GB, its cache 1 GB, the frontend's packages 0.1 GB |
 | NVIDIA GPU (optional) | with driver 560 or newer for CUDA 12.6. Without one, everything runs on the CPU (see [Running on the CPU](#running-on-the-cpu)) |
 
 ### 1. Clone the repository
@@ -198,10 +198,10 @@ table, then `Patient leakage check passed`.
 python -m pytest
 ```
 
-Every test should pass. On a computer without a CUDA GPU, leave out the GPU test:
-`python -m pytest --ignore=tests/test_cuda.py`. A few tests need the checkpoints of the training runs
-behind the committed reports, which only exist on the machine that trained them; they skip with that
-reason on a fresh clone.
+Every test should pass: 397 tests, about 2.5 minutes with a laptop GPU. On a computer without a CUDA
+GPU, leave out the GPU test: `python -m pytest --ignore=tests/test_cuda.py`. The tests that re-predict
+the validation fold use the committed release model where the training run's own checkpoint is not
+present (it is a byte copy, pinned by the same SHA-256).
 
 ### 5. Run the app
 
