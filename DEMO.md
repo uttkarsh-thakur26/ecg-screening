@@ -101,7 +101,7 @@ Read the three values off the headline strip as you say this rather than from me
 
 | Problem | What to do |
 |---|---|
-| The API stops with `api.device is 'cuda' but torch cannot see a CUDA GPU` | Set `api.device: cpu` in `config/default.yaml` and start the API again. The CPU gives the same flags for every record above; a prediction takes a few tenths of a second instead of tens of milliseconds |
+| The API stops with `api.device is 'cuda' but torch cannot see a CUDA GPU` | Set `api.device: cpu` in `config/default.yaml` and start the API again. The CPU gives the same flags and the same probabilities to three decimals for every record above, at about the same speed |
 | The page says *The API is not responding* | Check window 1. If the API crashed, start it again with `python -m src.api.main`, wait for `Application startup complete`, then click **Try again** |
 | The API says port 8000 is in use | An old API is still running: close its window (or end the `python` process), then start it again |
 | `npm run dev` says port 5173 is in use | Close the other dev server; the app must run on port 5173, the only origin the API accepts |

@@ -235,10 +235,11 @@ api:
   device: cpu
 ```
 
-The CPU gives the same flags as the GPU: for test records 9, 63 and 38 the calibrated probabilities
-differ by less than 0.001. One prediction with its attention map takes a few tenths of a second
-instead of tens of milliseconds. For training and the evaluation scripts, set `training.device: cpu`
-the same way (CPU training is much slower and gives a close but not identical model).
+The CPU gives the same flags as the GPU: for test records 9, 63 and 38 every flag and attention class
+is the same, and the calibrated probabilities differ by at most 0.00006. Serving one record is about as
+fast as on the GPU (about 10 ms for the prediction and 10 ms for the attention map on an 8-core laptop
+CPU). For training and the evaluation scripts, set `training.device: cpu` the same way (CPU training is
+much slower and gives a close but not identical model).
 
 ### 6. Reproduce training
 
@@ -251,7 +252,9 @@ python -m src.training.train --name main   # the full run: folds 1-8, early stop
 A full run takes about 5 minutes on a 4 GB laptop GPU. It writes the weights to
 `checkpoints/<run id>/best.pt` (not committed) and the per-epoch log and run record to
 `reports/runs/`. `python -m src.models.baselines` fits the two baselines. With the same code, config,
-seed and GPU, a run is bit-for-bit repeatable; on other hardware it is close but not identical.
+seed and GPU, a run is bit-for-bit repeatable: retrained from a fresh clone on the laptop that trained
+the release model, the run stopped at the same epoch (19 of 27) with weights bit-identical to
+`checkpoints/release.pt`. On other hardware it is close but not identical.
 
 ### 7. Reproduce the evaluation
 
@@ -267,8 +270,9 @@ python -m src.explain.gradcam_val     # Grad-CAM maps and the randomisation chec
 These overwrite the committed validation reports with your model's numbers. The **test** evaluation
 (`python -m src.evaluation.evaluate_test`) has been run once and refuses to open fold 10 again: the
 access log already has its one entry, and a rerun is allowed only after a documented bug fix in the
-evaluation code. `python -m src.evaluation.evaluate_test --rehearse <folder>` runs the same pipeline on
-fold 9 instead, writing into `<folder>`.
+evaluation code. Its fold-9 rehearsal (`--rehearse <folder>`) re-checks the three seed runs behind the
+seed-stability numbers from their own checkpoints, which are not committed, so it runs only on the
+machine that trained them.
 
 ## Methods
 
