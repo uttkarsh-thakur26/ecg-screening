@@ -3,6 +3,7 @@
 // file by hand; a test that edits the report does so only to reach a branch the real file does not take.
 import { describe, expect, it } from 'vitest'
 import METRICS_JSON from '../../../reports/metrics.json?raw'
+import README from '../../../README.md?raw'
 import { schemas, type MetricsReport } from './api'
 import {
   ciPercent, evaluationLine, foldsLabel, formatDifference, formatInterval, formatMetric, formatPercent, formatSpread,
@@ -93,6 +94,11 @@ describe('limitations', () => {
     expect(lines[0]).toBe('Single dataset (PTB-XL 1.0.3) from one source; results may not hold for other hospitals ' +
                           'or devices.')
     expect(lines[5]).toBe('Screening aid, not a diagnostic device.')
+  })
+
+  it('are the same list, word for word, as the Limitations section of README.md', () => {
+    const readme = README.replaceAll('\r\n', '\n')
+    for (const line of limitations(report)) expect(readme).toContain(`\n- ${line}\n`)
   })
 })
 

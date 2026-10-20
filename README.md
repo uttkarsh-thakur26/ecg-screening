@@ -1,895 +1,492 @@
 # CardioScreen: 12-lead ECG abnormality screening with a 1D CNN
 
 > **Screening aid. Not a diagnostic device. Not for clinical use.**
-> This is an educational course project. Its outputs must not be used for any medical decision.
+> This is an educational course project (CSET343, AI in Healthcare). Its outputs must not be used for
+> any medical decision.
 
-CardioScreen takes a 10-second, 12-lead electrocardiogram (ECG) and estimates, for each of five
-diagnostic categories, the probability that the category is present: normal ECG, myocardial
-infarction, ST/T-wave change, conduction disturbance and hypertrophy. The model is a
-one-dimensional convolutional neural network (1D CNN) trained on the public PTB-XL dataset.
+## What it does
 
-An ECG records the heart's electrical activity along 12 directions at once, called **leads**. Each
-lead is sampled 100 times per second (100 Hz). The project was built for CSET343 (AI in Healthcare);
-the build specification is [PROJECT_SPEC.md](PROJECT_SPEC.md), and every setting lives in
-[config/default.yaml](config/default.yaml).
+An **electrocardiogram (ECG)** records the heart's electrical activity. A standard ECG looks at the
+heart from 12 directions at once, called **leads**, for 10 seconds. Reading thousands of them takes a
+cardiologist's time, and a missed abnormality is costly.
 
-| At a glance | |
-|---|---|
-| Input | One ECG record: 12 leads × 10 s at 100 Hz (12 × 1000 samples) |
-| Output | Five calibrated probabilities ([NORM, MI, STTC, CD, HYP](#what-does-the-model-predict)) and a yes/no flag for each |
-| Model | 1D ResNet, about 6.3 million parameters |
-| Data | PTB-XL 1.0.3: 21,388 labelled records from 18,617 patients, split by patient |
-| Validation result | Macro AUROC 0.929, macro AUPRC 0.816 (seed 42; three-seed mean 0.928 and 0.815). Feature baseline: 0.856 and 0.693. Scale 0 to 1, higher is better ([how to read them](#how-to-read-the-metrics)) |
-| Test result | **Fold 10, evaluated once on 2026-10-19** with the frozen model, calibration and thresholds: macro AUROC 0.926 [0.918, 0.933], macro AUPRC 0.819 [0.802, 0.833] (95% patient-bootstrap intervals). See [reports/TEST_RUN.md](reports/TEST_RUN.md) |
+CardioScreen reads one 12-lead ECG and answers five yes/no questions: is the ECG **normal**, and does
+it show signs of **myocardial infarction** (heart-muscle damage from a blocked artery), **ST/T
+change**, **conduction disturbance** (the electrical signal spreads abnormally) or **hypertrophy**
+(thickened heart muscle)? For each it gives a probability, and it **flags** an abnormal category when
+the probability reaches a threshold chosen to catch about 9 in 10 cases. One ECG can show several
+abnormalities, so several flags can be raised at once.
 
-### Project status
+![The Result screen for held-out test record 63: lead II on an ECG grid with the model's attention band behind it, and one row per category; myocardial infarction is flagged](docs/images/result-screen.png)
 
-| Part | Status |
-|---|---|
-| Data pipeline, baselines, model training | Done |
-| Calibration and screening thresholds (validation) | Done |
-| Grad-CAM explanations and their sanity check (validation) | Done |
-| Band-pass filter comparison (a filter that removes slow drift and fast noise) | Implemented, not yet measured |
-| Error analysis (validation) | Done: [reports/error_analysis.md](reports/error_analysis.md) |
-| Final test evaluation (`reports/metrics.json`) | Done once, 2026-10-19 (tag `v1.0-model`): [reports/TEST_RUN.md](reports/TEST_RUN.md) |
-| FastAPI backend (demo API on the frozen model) | Done: [Running the API](#running-the-api) |
-| React frontend | Done: choose a record or upload, Result, Model performance: [Running the frontend](#running-the-frontend) |
+*The Result screen for test record 63. The model flags myocardial infarction (MI), which is also the
+record's label in the dataset. The green band shows where in the 10 seconds the model's evidence for
+MI was strongest; it is model attention, not a clinical rationale.*
 
-**Jump to:** [Installation](#installation-and-setup) · [Data](#downloading-and-preparing-the-data) ·
-[Training](#training-the-model) · [Results](#results-validation-only) ·
-[Limitations](#reproducibility-and-limitations) · [Detailed docs](#where-to-find-the-details)
+The app has three screens:
 
-## What does the model predict?
+1. **Screen an ECG**: pick one of the 2,158 held-out test records, or upload your own record as a
+   `.hea` + `.dat` pair (WFDB, PhysioNet's waveform format).
+2. **Result**: the signal on a clinical ECG grid (any of the 12 leads), the attention band when a
+   category is flagged, and the probability, threshold and flag for each category. For a test record,
+   **Reveal ground truth** then shows the dataset's labels next to the model's flags.
+3. **Model performance**: the one-time test-set evaluation, every number read from
+   `reports/metrics.json`.
 
-PTB-XL groups its diagnostic statements into five superclasses:
+The model is a one-dimensional convolutional neural network (1D CNN, a ResNet with about 6.3 million
+parameters) trained on **PTB-XL**, a public dataset of 21,799 clinical ECGs. It runs on a laptop GPU
+or on the CPU, entirely offline.
 
-| Code | Meaning | Share of validation records |
-|---|---|---:|
-| NORM | Normal ECG | 44.5% |
-| MI | Myocardial infarction (damage to heart muscle from a blocked blood supply) | 25.2% |
-| STTC | ST-segment and T-wave changes | 24.6% |
-| CD | Conduction disturbance (abnormal spread of the heart's electrical signal) | 23.1% |
-| HYP | Hypertrophy (thickened heart muscle) | 12.5% |
+## Results on the held-out test set
 
-**One record can have several labels.** About one in four labelled records has two or more
-superclasses, for example MI and CD together. So this is a *multi-label* task, not a
-*multi-class* one: the model answers five separate yes/no questions instead of choosing exactly one
-class. Each output has its own sigmoid, and there is no softmax.
+The test set is **PTB-XL fold 10**, held out from every decision. It was **evaluated once**, on
+2026-10-19, with the model, calibration and thresholds frozen on the validation fold beforehand. The
+evaluation followed a plan **pre-registered in [reports/TEST_PLAN.md](reports/TEST_PLAN.md)**,
+committed before fold 10 was opened; every opening of fold 10 is logged in
+`reports/fold10_access_log.jsonl` (one entry, no reruns). The tables below are written from
+`reports/metrics.json` by `python -m src.evaluation.doc_tables`, and a test fails if they ever differ
+from it.
 
-**From model output to decision.** Three different quantities appear in this project:
+<!-- metrics:test-results:start -->
+PTB-XL 1.0.3, fold 10: 2,158 records from 1,877 patients, evaluated once on 2026-10-19 at commit `d1e1b42`. Brackets are 95% intervals: percentile bootstrap over patients, 1,000 resamples.
 
-| Quantity | What it is |
-|---|---|
-| Raw logit | The network's unbounded score for a class. Higher means "more likely" |
-| Calibrated probability | The logit, corrected so that it matches observed frequencies better (see [calibration](#calibration-and-screening-thresholds)) |
-| Flag | Yes or no: is the calibrated probability at or above that class's threshold? |
+**Ranking** (threshold-free: does a record with the class score higher than one without it?)
 
-**What a probability means.** Calibration aims to make "0.8 for MI" mean "about 80% of such records
-have MI". That holds on average on the validation records it was fitted to, but has not been checked
-on held-out data or other populations. It describes this model on PTB-XL, not a patient's clinical
-risk.
-
-## How does the project work?
-
-```mermaid
-flowchart TB
-    subgraph data [Data]
-        direction LR
-        A[PTB-XL ECG records] --> B[Signal preprocessing] --> C[Label generation] --> D[Patient-level split]
-    end
-    subgraph model [Model]
-        direction LR
-        E[1D CNN training] --> F[Probability calibration] --> G[Threshold-based screening] --> H[Evaluation and explainability]
-    end
-    data --> model
-```
-
-1. **ECG records.** PTB-XL provides 21,799 clinical 12-lead ECGs, each 10 seconds long.
-2. **Signal preprocessing.** Each record is read once into a 12 × 1000 array and cached. Each lead is
-   later z-scored (rescaled to mean 0 and standard deviation 1) with statistics from the training
-   split only.
-3. **Label generation.** Each record's diagnostic statements are mapped to the five superclasses.
-4. **Patient-level split.** All records of a patient go to the same split, so the model is never
-   tested on a patient it has seen.
-5. **1D CNN training.** A residual 1D CNN learns from the training split; the validation split picks
-   the best epoch.
-6. **Probability calibration.** A small per-class correction brings the predicted probabilities
-   closer to the observed frequencies.
-7. **Threshold-based screening.** Each class gets its own probability threshold for raising a flag.
-8. **Evaluation and explainability.** Metrics, reliability diagrams and Grad-CAM maps, all on the
-   validation split so far.
-
-### Where to find the details
-
-This README gives the overview. The technical details, with every number traced to a report, are in
-`docs/`:
-
-| Document | Contents |
-|---|---|
-| [docs/DATA_PIPELINE.md](docs/DATA_PIPELINE.md) | Download checks, labels, splits, cache, normalisation, augmentation, test-set lock |
-| [docs/MODEL_AND_TRAINING.md](docs/MODEL_AND_TRAINING.md) | Architecture, loss, schedule, run records, reproducibility, training curves |
-| [docs/EXPERIMENTS_AND_RESULTS.md](docs/EXPERIMENTS_AND_RESULTS.md) | Baselines, beat detector, full results, amplitude-scaling experiment |
-| [docs/CALIBRATION_AND_EVALUATION.md](docs/CALIBRATION_AND_EVALUATION.md) | Metric definitions, calibration, operating points, fresh-clone evaluation |
-| [docs/EXPLAINABILITY.md](docs/EXPLAINABILITY.md) | Grad-CAM method, randomisation check, example maps and their limits |
-
-## Technologies used
-
-| Technology | Used for |
-|---|---|
-| Python 3.11 | Everything below |
-| PyTorch 2.14.1 | The 1D CNN, training, Grad-CAM |
-| NumPy, pandas | Signal arrays and record metadata |
-| wfdb | Reading PTB-XL's record files (WFDB, PhysioNet's waveform format) |
-| SciPy | Band-pass filters, the beat detector, skewness and kurtosis, rank correlation |
-| scikit-learn | The gradient-boosting baseline; AUROC and AUPRC |
-| matplotlib | All figures in `reports/figures/` |
-| PyYAML | The configuration file |
-| requests, tqdm | Downloading the dataset with progress bars |
-| FastAPI, pydantic, uvicorn, python-multipart | The demo API in `src/api/` |
-| pytest, httpx2 | The test suite (httpx2 is the HTTP client behind FastAPI's test client) |
-
-The frontend (`frontend/`, Node.js 24) uses React 19, React Router, TypeScript, Vite, Tailwind CSS,
-zod (checks every API response against the API's schemas) and the Inter font, bundled locally so the
-demo works offline. Its exact versions are pinned in `frontend/package.json`.
-
-## Dataset
-
-**PTB-XL** is a large public dataset of clinical 12-lead ECGs recorded in Germany, published on
-PhysioNet. This project uses **version 1.0.3** and only the **100 Hz** versions of the records.
-
-| | Records | Patients |
-|---|---:|---:|
-| Whole dataset | 21,799 | 18,869 |
-| With at least one diagnostic superclass (used here) | 21,388 | 18,617 |
-
-- **Signals.** 10 s × 12 leads at 100 Hz: 1000 samples per lead, in millivolts.
-- **Labels.** Each record comes with standardised diagnostic statements (SCP-ECG codes, in the
-  `scp_codes` column). Those marked diagnostic in `scp_statements.csv` are mapped to their
-  superclass. This reproduces PhysioNet's published class counts exactly.
-- **Excluded records.** 411 records have only rhythm or form statements (mostly pacemaker, atrial
-  fibrillation and flutter) and no diagnostic superclass, so they are dropped.
-
-**Splits.** PTB-XL's `strat_fold` column divides patients into 10 folds:
-
-| Split | Folds | Records | Patients | Used for |
-|---|---|---:|---:|---|
-| Train | 1–8 | 17,084 | 14,823 | Fitting the model and the normalisation statistics |
-| Validation | 9 | 2,146 | 1,917 | Choosing the epoch, settings, calibration and thresholds |
-| Test | 10 | 2,158 | 1,877 | The one-time final evaluation (not run yet) |
-
-**Why patient-level splitting matters.** Some patients have several ECGs. If one were in training
-and another in validation, the model could recognise the patient instead of the disease, and the
-scores would be too optimistic. An automated check confirms that no patient appears in two splits,
-and a software lock stops code from loading the test split by accident.
-
-**Licence.** PTB-XL is released under the Creative Commons Attribution 4.0 International licence
-(CC BY 4.0). The data is not stored in this repository; see
-[References and licence](#references-and-licence) for the required citations.
-
-More detail: [docs/DATA_PIPELINE.md](docs/DATA_PIPELINE.md).
-
-## Model architecture
-
-The model is a 1D residual network (ResNet), defined in
-[src/models/resnet1d.py](src/models/resnet1d.py).
-
-**Why a 1D CNN?** An ECG is a set of time series. A 1D convolution slides small learned filters
-along time across all 12 leads at once. In principle, early filters can respond to short shapes such
-as a QRS complex, and deeper layers can combine them into longer patterns such as a widened QRS.
-Because the same filters are applied at every position, a pattern can be detected roughly wherever
-it occurs. (This is the design intent; the learned filters were not inspected.)
-
-**Why residual connections?** Each residual block adds its input (or a resized copy of it) back to
-its output, so the block only has to learn a correction. This keeps training stable in a deep
-network (He et al., 2016).
-
-| Part | What it does | Output (channels × time) |
-|---|---|---|
-| Stem | Convolution (kernel 7, stride 2), batch normalisation, ReLU, max pooling | 64 × 250 |
-| Stage 1 | 2 residual blocks | 64 × 250 |
-| Stage 2 | 2 residual blocks, halves the time axis | 128 × 125 |
-| Stage 3 | 2 residual blocks, halves the time axis | 256 × 63 |
-| Stage 4 | 2 residual blocks, halves the time axis | 512 × 32 |
-| Head | Global average pooling over time, dropout, linear layer | 5 logits |
-
-Terms: the kernel is the filter width in samples; stride 2 halves the time axis; batch normalisation
-rescales intermediate values; ReLU sets negative values to 0; max pooling keeps the largest value in
-each small window.
-
-**From features to predictions.** Global average pooling turns the 512 × 32 feature map into one
-512-number summary of the record. A linear layer maps it to five **logits** (unbounded scores), and
-a sigmoid per class turns each logit into a probability. The model has **6,290,821 trainable
-parameters**.
-
-More detail: [docs/MODEL_AND_TRAINING.md](docs/MODEL_AND_TRAINING.md).
-
-## Training methodology
-
-| Choice | Value | Why |
-|---|---|---|
-| Training data | Folds 1–8 | Patient-level split |
-| Normalisation | Per-lead z-score, statistics from the training split only | Using all data would leak information from validation and test |
-| Augmentation (training only) | Time shift up to ±2 s; Gaussian noise (σ = 0.05 lead std) | More variety without changing the diagnosis |
-| Loss | `BCEWithLogitsLoss` with `pos_weight` per class (negatives ÷ positives: 1.25 for NORM up to 7.06 for HYP) | One yes/no loss per class; `pos_weight` counters class imbalance |
-| Optimiser | AdamW, learning rate 1e-3, weight decay 1e-2 | Standard choice; weight decay limits overfitting |
-| Learning-rate schedule | Linear warmup over the first 2 epochs, then cosine decay to zero at epoch 50 | Gentle start, smaller steps later |
-| Batch size | 64 | Fits a 4 GB GPU |
-| Model selection | Best validation macro AUROC; stop after 8 epochs without improvement | Keeps the best epoch, stops when overfitting starts |
-| Seed | 42, with deterministic GPU kernels | Repeatable runs |
-
-- **Augmentation choices.** Time reversal and sign inversion are never used, because they change
-  the clinical meaning of an ECG. Amplitude scaling (×0.8–1.2) is implemented but switched off: it
-  did not improve HYP AUPRC under the project's decision rule (see the
-  [amplitude-scaling experiment](#amplitude-scaling-experiment)).
-- **Reproducibility.** Repeating a full run with the same code, config and seed on the same machine
-  gave bit-identical weights.
-- **Sanity check.** Before the full run, the model is shown to memorise 50 training records, which
-  catches gross errors such as wrong targets or a broken update step.
-
-More detail: [docs/MODEL_AND_TRAINING.md](docs/MODEL_AND_TRAINING.md).
-
-## Results (validation only)
-
-> All results in this section are on the **validation split** (fold 9), **not** the test split. Because
-> the epoch, settings, calibration and thresholds were chosen on this split, the numbers are optimistic.
-> The one-time test result (fold 10) is in [reports/TEST_RUN.md](reports/TEST_RUN.md). The model has
-> not been validated for clinical use.
-
-### How to read the metrics
-
-- **AUROC** (area under the receiver operating characteristic curve) measures how well the model
-  *ranks* records: the chance that a random record with the class scores higher than a random record
-  without it. 0.5 is guessing and 1.0 is perfect.
-- **AUPRC** (area under the precision–recall curve, computed as average precision) summarises the
-  balance between precision and recall over all thresholds. It is more informative than AUROC for
-  rare classes.
-- **Precision** is the share of flagged records that really have the class. **Recall** (also called
-  **sensitivity**) is the share of records with the class that get flagged. **Specificity** is the
-  share of records without the class that are not flagged.
-- **Compare AUPRC with prevalence.** A model with no skill gets an AUPRC equal to the class's
-  prevalence (its share of positive records), not 0.5. For example, HYP is present in 12.5% of
-  validation records, so an AUPRC of 0.67 for HYP is more than five times the no-skill level.
-- **Macro** means the unweighted average over the five classes.
-
-### Model comparison
-
-| Model | Macro AUROC | Macro AUPRC |
-|---|---:|---:|
-| Prior baseline (always predicts the training frequency) | 0.500 | 0.260 |
-| Feature baseline (79 hand-crafted features + gradient boosting) | 0.856 | 0.693 |
-| **1D ResNet** (committed config, seed 42) | **0.929** | **0.816** |
-
-| Class | Prevalence | Feature AUROC | Feature AUPRC | ResNet AUROC | ResNet AUPRC |
-|---|---:|---:|---:|---:|---:|
-| NORM | 0.445 | 0.889 | 0.856 | 0.947 | 0.931 |
-| MI | 0.252 | 0.828 | 0.637 | 0.930 | 0.843 |
-| STTC | 0.246 | 0.828 | 0.602 | 0.930 | 0.789 |
-| CD | 0.231 | 0.850 | 0.742 | 0.928 | 0.847 |
-| HYP | 0.125 | 0.886 | 0.628 | 0.909 | 0.671 |
-
-- The CNN beats the feature baseline in every class. The gain is smallest for HYP (AUROC +0.02,
-  AUPRC +0.04); the reason has not been established.
-- Across three seeds (42, 43, 44), the committed config reaches macro AUROC **0.928 ± 0.001** and
-  macro AUPRC **0.815 ± 0.003** (mean ± standard deviation).
-- For context, Strodthoff et al. (2021) report about 0.93 macro AUROC for the best CNNs on this
-  task, but on the test fold, so the numbers are not directly comparable.
-
-### Amplitude-scaling experiment
-
-Random amplitude scaling was tested by training pairs of runs that differ only in that setting,
-with three seeds each. The rule was: keep scaling off unless scaling on gives the higher mean HYP
-AUPRC.
-
-| Metric (fold 9, mean ± std over 3 seeds) | Scaling on | Scaling off | Off better in |
+| Class | Prevalence | AUROC | AUPRC |
 |---|---:|---:|---:|
-| HYP AUPRC | 0.6574 ± 0.0051 | 0.6688 ± 0.0030 | 3 of 3 seeds |
-| HYP AUROC | 0.9042 ± 0.0027 | 0.9068 ± 0.0031 | 2 of 3 seeds |
-| CD AUPRC | 0.8582 ± 0.0047 | 0.8525 ± 0.0084 | 0 of 3 seeds |
-| CD AUROC | 0.9327 ± 0.0018 | 0.9300 ± 0.0014 | 0 of 3 seeds |
-| Macro AUROC | 0.9270 ± 0.0003 | 0.9279 ± 0.0009 | 3 of 3 seeds |
-| Macro AUPRC | 0.8121 ± 0.0006 | 0.8148 ± 0.0027 | 2 of 3 seeds |
+| NORM (Normal ECG) | 0.446 | 0.947 [0.938, 0.955] | 0.929 [0.914, 0.942] |
+| MI (Myocardial infarction) | 0.255 | 0.922 [0.908, 0.934] | 0.819 [0.788, 0.847] |
+| STTC (ST/T change) | 0.241 | 0.937 [0.925, 0.947] | 0.834 [0.800, 0.864] |
+| CD (Conduction disturbance) | 0.230 | 0.922 [0.905, 0.939] | 0.841 [0.808, 0.869] |
+| HYP (Hypertrophy) | 0.121 | 0.901 [0.880, 0.921] | 0.670 [0.611, 0.718] |
+| **Macro, all 5 classes** |  | 0.926 [0.918, 0.933] | 0.819 [0.802, 0.833] |
+| **Macro, 4 abnormal classes** |  | 0.921 [0.912, 0.928] | 0.791 [0.771, 0.808] |
 
-- **Decision:** scaling stays off, because scaling on does not give the higher mean HYP AUPRC.
-- **Trade-off:** scaling off raises HYP AUPRC but lowers CD in every seed; the HYP AUROC difference
-  is within noise. A plausible, untested reason: hypertrophy criteria depend on absolute voltage,
-  which scaling blurs, while conduction disturbances depend on timing.
-- **Uncertainty:** three seeds are few; three out of three agreeing would happen by chance one time
-  in four. For each seed, a 95% interval was estimated by resampling validation patients; only one
-  seed's interval for the HYP AUPRC difference excludes zero, and only just.
-- **History:** scaling was first switched off after the seed-42 pair alone, so the evaluated seed-42
-  model is the better of two runs on fold 9, which adds a little optimism.
+**High-sensitivity operating point** (the thresholds the app uses; chosen on fold 9 for sensitivity ≥ 0.90). Missed cases: MI 62 of 550, STTC 51 of 521, CD 55 of 496, HYP 29 of 262.
 
-All 12 metrics and per-seed differences:
-[docs/EXPERIMENTS_AND_RESULTS.md](docs/EXPERIMENTS_AND_RESULTS.md#5-amplitude-scaling-experiment).
-Every bootstrap interval:
-[reports/runs/summary_amplitude_scale_seeds.json](reports/runs/summary_amplitude_scale_seeds.json).
+| Class | Threshold | Sensitivity | Specificity | Precision | F1 |
+|---|---:|---:|---:|---:|---:|
+| MI (Myocardial infarction) | 0.181 | 0.887 [0.859, 0.914] | 0.786 [0.763, 0.806] | 0.587 [0.551, 0.620] | 0.706 [0.676, 0.732] |
+| STTC (ST/T change) | 0.219 | 0.902 [0.874, 0.927] | 0.811 [0.789, 0.831] | 0.603 [0.565, 0.638] | 0.723 [0.691, 0.749] |
+| CD (Conduction disturbance) | 0.132 | 0.889 [0.861, 0.916] | 0.792 [0.772, 0.812] | 0.560 [0.524, 0.597] | 0.687 [0.655, 0.717] |
+| HYP (Hypertrophy) | 0.073 | 0.889 [0.848, 0.929] | 0.713 [0.688, 0.733] | 0.299 [0.265, 0.331] | 0.448 [0.407, 0.484] |
+| **Macro, 4 abnormal classes** |  | 0.892 [0.876, 0.907] | 0.775 [0.763, 0.787] | 0.512 [0.496, 0.528] | 0.641 [0.626, 0.655] |
 
-## Calibration and screening thresholds
+**Against the baselines**
 
-**Why calibrate?** The raw outputs overstate every class. Training up-weighted positive labels
-(`pos_weight`), which shifts every logit upwards, and the saved model is somewhat overconfident.
-Calibration is a small per-class correction fitted on the validation split after training.
+| Model (macro, all 5 classes) | AUROC | AUPRC |
+|---|---:|---:|
+| Prior baseline (every record scored with the training-split class frequency) | 0.500 | 0.259 |
+| Feature baseline (hand-crafted RR-interval and amplitude features, gradient-boosted trees) | 0.839 [0.827, 0.850] | 0.676 [0.654, 0.696] |
+| **1D CNN (this model)** | 0.926 [0.918, 0.933] | 0.819 [0.802, 0.833] |
+| CNN minus feature baseline (paired: same resampled patients) | +0.086 [0.077, 0.097] | +0.142 [0.126, 0.161] |
 
-| Method | Formula | What it can fix |
-|---|---|---|
-| Temperature scaling | p = sigmoid(logit / T) | Overconfidence only |
-| Platt scaling | p = sigmoid(a · logit + b) | Overconfidence (through a) and the upward shift (through b) |
+**Calibration**: expected calibration error (ECE, 10 equal-width bins; lower is better). Point values: ECE's bootstrap interval is biased upward and is not a confidence interval, so it is not shown.
 
-Per class, the method with the lower expected calibration error (ECE: the average gap between
-predicted probability and observed frequency) is kept. Platt scaling won for MI, STTC, CD and HYP,
-and temperature scaling for NORM. Macro ECE fell from 0.089 to 0.016. Calibration never changes the
-order of records, so AUROC and AUPRC are unchanged.
+| Class | Calibrator (fitted on fold 9) | ECE uncalibrated | ECE calibrated |
+|---|---|---:|---:|
+| NORM (Normal ECG) | Temperature scaling | 0.036 | 0.016 |
+| MI (Myocardial infarction) | Platt scaling | 0.082 | 0.015 |
+| STTC (ST/T change) | Platt scaling | 0.109 | 0.012 |
+| CD (Conduction disturbance) | Platt scaling | 0.107 | 0.016 |
+| HYP (Hypertrophy) | Platt scaling | 0.113 | 0.014 |
+| **Macro, all 5 classes** |  | 0.089 | 0.015 |
+<!-- metrics:test-results:end -->
 
-**From probability to flag.** A record is flagged for a class when its calibrated probability is at
-least that class's threshold. Thresholds are chosen per class rather than shared, because the classes
-differ in prevalence and in how the model's scores are spread. A threshold is an operating choice
-for this model, not a universal medical cut-off.
+**How to read these.** AUROC is the chance that a random record with the class scores higher than a
+random record without it (0.5 is guessing, 1 is perfect). AUPRC summarises precision against
+sensitivity over all thresholds; with no skill it equals the class's prevalence, not 0.5, so compare
+it with the prevalence column. **Sensitivity** is the share of records with the class that get
+flagged, **specificity** the share without it that are not flagged, and **precision** the share of
+flags that are correct. **Macro** is the unweighted average over classes.
 
-Two operating points are reported:
+The full test report, including the max-F1 operating point and the comparison with the validation
+fold, is [reports/TEST_RUN.md](reports/TEST_RUN.md).
 
-- **Max-F1:** the threshold with the best F1 score, which balances precision and sensitivity.
-- **Sensitivity ≥ 0.90:** for each abnormal class, the strictest threshold that still catches at
-  least 90% of validation cases. The project's spec treats a missed abnormality as costlier than a
-  false alarm; the right balance would depend on a clinical setting this project does not address.
+## Setup on Windows, from a clean clone
 
-Max-F1 operating point:
+Everything below runs in **Windows PowerShell** from the repository folder. It was checked by cloning
+the repository into an empty folder and following this section step by step.
 
-| Class | Threshold | Sensitivity | Specificity | Precision |
-|---|---:|---:|---:|---:|
-| NORM | 0.415 | 0.919 | 0.845 | 0.826 |
-| MI | 0.367 | 0.793 | 0.903 | 0.734 |
-| STTC | 0.373 | 0.807 | 0.897 | 0.718 |
-| CD | 0.357 | 0.786 | 0.924 | 0.755 |
-| HYP | 0.396 | 0.578 | 0.959 | 0.668 |
+### What you need
 
-Sensitivity ≥ 0.90 operating point (abnormal classes only):
+| | |
+|---|---|
+| Windows 10 or 11 | PowerShell (built in) |
+| [Git](https://git-scm.com/download/win) | to clone the repository |
+| [Python 3.11](https://www.python.org/downloads/) | with the `py` launcher (the installer's default) |
+| [Node.js 24](https://nodejs.org/) | includes `npm`; only for the app's frontend |
+| Disk space | about 6 GB: PyTorch with CUDA about 4 GB, the dataset 0.55 GB, its cache 1.05 GB |
+| NVIDIA GPU (optional) | with driver 560 or newer for CUDA 12.6. Without one, everything runs on the CPU (see [Running on the CPU](#running-on-the-cpu)) |
 
-| Class | Threshold | Sensitivity | Specificity | Precision |
-|---|---:|---:|---:|---:|
-| MI | 0.181 | 0.900 | 0.801 | 0.604 |
-| STTC | 0.219 | 0.902 | 0.807 | 0.604 |
-| CD | 0.132 | 0.901 | 0.780 | 0.551 |
-| HYP | 0.073 | 0.903 | 0.721 | 0.316 |
+### 1. Clone the repository
 
-The max-F1 thresholds are similar across classes (0.36–0.42); the high-sensitivity thresholds
-differ much more (0.07–0.22).
+Use Git, not a ZIP download: every report records the git commit it came from, and the scripts stop
+with an error outside a git repository.
 
-**High sensitivity means more false alarms.** At the max-F1 threshold the model misses 42% of HYP
-cases. Raising HYP sensitivity to 0.90 cuts the misses from 113 to 26 of 268, but false alarms rise
-from 77 to 524 of the 1,878 records without HYP, so only about one in three HYP flags is correct.
-
-> **These operating points are optimistic.** Calibration and thresholds were chosen on the same
-> validation records they are scored on. The unbiased estimate comes from applying the frozen
-> calibration and thresholds once to the test split: see [reports/TEST_RUN.md](reports/TEST_RUN.md).
-
-More detail: [docs/CALIBRATION_AND_EVALUATION.md](docs/CALIBRATION_AND_EVALUATION.md).
-
-## Explainability (Grad-CAM)
-
-**Grad-CAM** (gradient-weighted class activation mapping) highlights *when* in the 10-second record
-the model's internal features pushed the score for one class up. It is drawn as a shaded band behind
-the ECG trace: darker means that part of the record raised that class's score more, relative to the
-rest of the same record.
-
-![Grad-CAM overlay for a validation MI record](reports/figures/gradcam_example_MI_val.png)
-
-*A best case, not a typical one: the most confident correctly classified MI-only validation record.*
-
-**What the band can show.** Roughly which time regions (one value every 0.32 s) contributed most to
-one class's score.
-
-**What it cannot show.**
-
-- Which lead mattered: the map is shared by all 12 leads.
-- Which beat or wave mattered: each value draws on a window up to 8.6 s wide.
-- Evidence *against* the class, or a comparison of strength between records.
-- That the model learned correct medical reasoning.
-
-> **The heatmap is model attention, not a clinical rationale.**
-
-**Sanity check.** If the maps barely changed when the trained weights were replaced with random
-ones, they would only reflect the input signal. For one validation record per class, the trained and
-random-model maps shared little: mean |Spearman ρ| (rank correlation) about 0.2, against a pass limit
-of 0.5. The check passed.
-
-The evidence is limited. It uses 5 records; 3 of the 15 random maps were empty and were left out by a
-rule added after the first run; one pair reached ρ = 0.60; and the limit bounds the average, not
-each record.
-
-More detail: [docs/EXPLAINABILITY.md](docs/EXPLAINABILITY.md).
-
-## Installation and setup
-
-You need **Python 3.11** and Git. An NVIDIA GPU with CUDA is recommended for training; the reported
-results came from a 4 GB laptop GPU.
-
-Only step 1 differs between operating systems. From step 2 on, the same commands work in Windows
-PowerShell and in a Linux or macOS shell, except the optional `bash scripts/...` helper scripts.
-
-### 0. Get the code
-
-Clone the repository with Git, then work inside its folder. A ZIP download will not work: every
-report records the git commit, and the commands stop with an error outside a git repository.
-
-```bash
+```powershell
 git clone https://github.com/uttkarsh-thakur26/ecg-screening.git
-```
-
-```bash
 cd ecg-screening
 ```
 
-### 1. Create and activate a virtual environment
+The clone includes the frozen release model, `checkpoints/release.pt` (25 MB). It is the only model
+file in git; the API checks its SHA-256 against `reports/release.json` before serving it.
 
-A virtual environment keeps this project's packages separate from the rest of your system. Run these
-commands from the repository folder.
-
-Windows (PowerShell):
+### 2. Create the Python environment
 
 ```powershell
 py -3.11 -m venv .venv
 .\.venv\Scripts\Activate.ps1
+python -m pip install --upgrade pip
+pip install -r requirements.txt
 ```
 
-If PowerShell says that running scripts is disabled, allow scripts for the current window only and
-then run the activation line again:
+If PowerShell says that running scripts is disabled, allow them for this window only, then run the
+activation line again:
 
 ```powershell
 Set-ExecutionPolicy -Scope Process -ExecutionPolicy RemoteSigned
 ```
 
-Linux or macOS:
+`requirements.txt` pins every version behind the reported results, including **PyTorch 2.14.1 built
+for CUDA 12.6** from PyTorch's own package index. The same build also runs on a computer without a
+GPU. Check what PyTorch sees:
 
-```bash
-python3.11 -m venv .venv
-source .venv/bin/activate
+```powershell
+python -c "import torch; print(torch.__version__, torch.cuda.is_available())"
 ```
 
-### 2. Install the dependencies
+It prints `2.14.1+cu126 True` when a CUDA GPU is usable. `False` on a machine with an NVIDIA GPU
+means the driver is missing or too old for CUDA 12.6 (`nvidia-smi` should list the GPU).
 
-`requirements.txt` pins the exact versions behind the reported results. It installs PyTorch 2.14.1
-built for CUDA 12.6 from PyTorch's own package index; this build also runs on a CPU.
+### 3. Download and prepare the data
 
-```bash
-python -m pip install --upgrade pip
-pip install -r requirements.txt
-```
+The data is **not stored in this repository**. A script downloads PTB-XL 1.0.3 (about 551 MB, 43,600
+files) from PhysioNet's AWS Open Data mirror into `data/raw/` and checks every file against
+PhysioNet's published SHA-256 checksums. It can be interrupted and run again: finished files are kept
+and partial ones resumed.
 
-The CUDA 12.6 build needs a recent NVIDIA driver (version 560 or newer). For another CUDA version, or
-on macOS: delete the `--extra-index-url` and `torch==` lines from `requirements.txt`, install torch
-2.14.1 with the command [pytorch.org](https://pytorch.org/get-started/locally/) gives for your system,
-then run `pip install -r requirements.txt` again.
-
-### 3. Check that PyTorch sees the GPU
-
-```bash
-python -c "import torch; print(torch.cuda.is_available())"
-```
-
-It prints `True` when a CUDA GPU is usable. If it prints `False` on a machine with an NVIDIA GPU,
-check that `nvidia-smi` lists the GPU and that the driver supports CUDA 12.6.
-
-### 4. Only without an NVIDIA GPU: use the CPU
-
-Training and evaluation use `training.device: cuda` by default and stop with a clear error if no GPU
-is visible, rather than silently using the CPU. To use the CPU, change that line in
-[config/default.yaml](config/default.yaml):
-
-```yaml
-training:
-  device: cpu
-```
-
-- This one change covers every command, including the overfit check, evaluation and Grad-CAM. For a
-  full training run alone, `--set training.device=cpu` also works; the other commands have no `--set`.
-- Editing this tracked file makes every report record `dirty: true`, and most commands print a
-  warning. Commit the change before training if you want clean records; `summarize_comparisons`
-  refuses runs trained from a dirty tree.
-- CPU training is much slower; its run time has not been measured.
-- Skip the GPU test in the test suite by adding `--ignore=tests/test_cuda.py` (see
-  [step 6 of data preparation](#downloading-and-preparing-the-data)).
-- Deterministic kernels make runs repeatable on one machine, not identical across GPUs or on the
-  CPU, so a CPU model will be close to the committed results but not identical.
-
-## Downloading and preparing the data
-
-The download is about 551 MB: 43,600 data files plus PhysioNet's checksum list. Preparing the data
-adds a signal cache of about 1.05 GB, so allow at least 2 GB of free disk space. Everything is
-written to `data/`, which git ignores.
-
-**1. Download the dataset.**
-
-```bash
+```powershell
 python -m src.data.download
 ```
 
-Downloads PTB-XL 1.0.3 from PhysioNet's AWS Open Data mirror into `data/raw/` and checks every file
-against PhysioNet's published SHA-256 checksums. It can be interrupted and re-run: finished files
-are kept and partial ones are resumed. It ends with the record and patient counts (21,799 and 18,869)
-and `Matches PhysioNet's figures for PTB-XL v1.0.3`.
+It ends with the record and patient counts (21,799 and 18,869) and
+`Matches PhysioNet's figures for PTB-XL v1.0.3`.
 
-**2. Verify the files.**
+**Already downloaded it once?** For example in another clone of this project: copy that clone's
+`data\raw` folder into this one, then run the download script with `--rehash`. It re-checks every
+copied file against PhysioNet's checksums and downloads only what is missing or wrong:
 
-```bash
-python -m src.data.download --verify-only
+```powershell
+Copy-Item -Recurse <path to the other clone>\data\raw data\raw
+python -m src.data.download --rehash
 ```
 
-Works offline. Checks the counts and that every record's `.hea` and `.dat` file exists, and prints
-the same four lines as the end of step 1. It does not re-hash files; `--rehash` does.
+Then build the labels, splits, normalisation statistics and the signal cache (about 1.05 GB in
+`data/cache/`):
 
-**3. Inspect a sample ECG.**
-
-```bash
-python -m src.data.inspect_record
-```
-
-Loads one training record (`ecg_id` 1), prints its shape `(1000, 12)`, sampling rate (100 Hz) and
-lead names, and saves lead II on ECG-paper scale to `reports/figures/sample_record.png`.
-
-**4. Prepare labels, splits, normalisation statistics and the cache.**
-
-```bash
+```powershell
 python -m src.data.prepare
 ```
 
-Prints the label table (21,388 records kept, 411 dropped, class counts matching PhysioNet's) and the
-split table, then `Patient leakage check passed`. It builds the signal cache in `data/cache/raw/` if
-it is missing, then computes the training-only normalisation statistics and saves `norm_stats.json`.
+It prints the label table (21,388 records kept, 411 without a diagnostic label dropped) and the split
+table, then `Patient leakage check passed`.
 
-**5. Inspect the data-loading pipeline.**
+### 4. Run the tests
 
-```bash
-python -m src.data.inspect_pipeline
+```powershell
+python -m pytest
 ```
 
-Prints one batch from the training and validation loaders (signals `(64, 12, 1000)`, targets
-`(64, 5)`), shows that the test loader is locked, and times how long one training epoch takes to
-load. To check the shapes it also loads one test batch through the lock's explicit override; no
-model sees it. Use `--workers 0 2 4` to compare worker counts.
+Every test should pass. On a computer without a CUDA GPU, leave out the GPU test:
+`python -m pytest --ignore=tests/test_cuda.py`. A few tests need the checkpoints of the training runs
+behind the committed reports, which only exist on the machine that trained them; they skip with that
+reason on a fresh clone.
 
-**6. Run the tests.**
+### 5. Run the app
 
-```bash
-python -m pytest --deselect tests/test_calibration.py::test_calibration_recomputed_from_the_checkpoint_leaves_auroc_unchanged
-```
+Two PowerShell windows, both in the repository folder. In the first, with the environment active:
 
-All tests should pass. The deselected test re-predicts with the checkpoint named by
-`evaluation.model_run`, so it can only pass after you have [trained a model](#training-the-model),
-set `evaluation.model_run` to its run id and run [calibration](#evaluation-and-explainability-commands).
-
-Without a GPU, skip the GPU test as well:
-
-```bash
-python -m pytest --ignore=tests/test_cuda.py --deselect tests/test_calibration.py::test_calibration_recomputed_from_the_checkpoint_leaves_auroc_unchanged
-```
-
-## Training the model
-
-> **Model weights are not in git.** The `checkpoints/` folder is ignored, so a fresh clone has no
-> trained model. Train your own before running any evaluation or Grad-CAM command.
-
-**1a. Check the GPU.** This test confirms that the GPU is visible and computes correctly. It fails
-(rather than skips) without a GPU, so leave it out on a CPU-only machine.
-
-```bash
-python -m pytest tests/test_cuda.py
-```
-
-**1b. Print the model summary.** This prints the output shape and parameter count of the stem, the
-four stages and the head, and the total of 6,290,821 parameters, without loading any data.
-
-```bash
-python -m src.models.resnet1d
-```
-
-**2. Fit the baselines (optional).**
-
-```bash
-python -m src.models.baselines
-```
-
-Fits the prior and feature baselines on the training split, scores them on validation, and writes
-`reports/baselines_val.json`. Training prints its results next to these for comparison.
-
-**3. Run the overfit sanity check.**
-
-```bash
-python -m src.training.train --overfit
-```
-
-Trains on 50 records for 300 steps. It should print `Overfit check PASSED: eval-mode loss ...` and
-exit with status 0. The 300 steps took about 13 s on the 4 GB laptop GPU used for the reported
-results.
-
-**4. Train the main model.**
-
-```bash
-python -m src.training.train --name main
-```
-
-Trains on folds 1–8 with early stopping on fold 9. A full run took about 5 minutes on a 4 GB laptop
-GPU. It prints a table per epoch and ends with the best epoch, a comparison with the baselines and
-the saved file paths. The run id (`<date>-<time>_main`) is printed at the start.
-
-A new `main` run uses today's config and should be close to the evaluated model; the older committed
-run named `main` differs (see [committed runs](docs/MODEL_AND_TRAINING.md#11-committed-runs)).
-
-**5. Compare experiments (optional).** Each `--set KEY=VALUE` overrides one existing config value for
-a single run, keeping its type; repeat the flag for several (`splits.*` cannot be changed). For
-example, this trains seed 43 with amplitude scaling switched on:
-
-```bash
-python -m src.training.train --name on-s43 --set training.seed=43 --set augmentation.amplitude_scale.enabled=true
-```
-
-This compares two finished runs on the validation split, with a bootstrap over patients, and writes
-`reports/runs/compare_<A>_vs_<B>.json`. It needs both runs' checkpoints, so on a fresh clone it
-works only for runs you trained yourself:
-
-```bash
-python -m src.training.compare_runs <run A id> <run B id>
-```
-
-`python -m src.training.summarize_comparisons --name <name> <compare json> ...` then combines
-comparisons made with different seeds into mean ± standard deviation
-([details](docs/EXPERIMENTS_AND_RESULTS.md#5-amplitude-scaling-experiment)).
-
-**Where the outputs go.**
-
-| Output | Location | Tracked by git |
-|---|---|---|
-| Best weights of each run | `checkpoints/<run_id>/best.pt` | no (ignored) |
-| Per-epoch log | `reports/runs/<run_id>.csv` | yes |
-| Run record (config, commit, seed, environment, best epoch) | `reports/runs/<run_id>.json` | yes |
-| Run comparisons | `reports/runs/compare_*.json`, `reports/runs/summary_*.json` | yes |
-
-`bash scripts/run_training.sh` runs steps 1a, 3 and 4 in one go and stops at the first failure. It
-needs a GPU and a bash shell (on Windows, Git Bash or WSL); otherwise run the three steps one by
-one.
-
-## Evaluation and explainability commands
-
-Every command in this section scores the **validation split only** (the training split is read
-just to draw the class-distribution figure). None of them opens the test split.
-
-**On a fresh clone, first point the config at your model.** Set `evaluation.model_run` in
-[config/default.yaml](config/default.yaml) to the run id from training. The committed value names a
-run whose weights exist only on the machine that trained it. Editing this tracked file makes the
-commands print a dirty-tree warning and record `dirty: true`; commit the change first if you want
-clean records.
-
-**1. Calibrate and evaluate.**
-
-```bash
-python -m src.training.calibrate
-```
-
-Reloads the best checkpoint, checks that its predictions reproduce the logged validation metrics,
-fits the calibrators, chooses the thresholds, and writes `reports/calibration.json`,
-`reports/thresholds.json`, `reports/metrics_val.json` and the figures in `reports/figures/`.
-
-**2. Re-run only the evaluation (optional).**
-
-```bash
-python -m src.evaluation.evaluate_val
-```
-
-Regenerates thresholds, metrics and figures from the saved `reports/calibration.json` without
-refitting it.
-
-**3. Compute the Grad-CAM maps.**
-
-```bash
-python -m src.explain.gradcam_val
-```
-
-Runs the randomisation sanity check and draws the example overlays. Writes `reports/gradcam_val.json`
-and the `gradcam_*` figures. Needs the calibration and thresholds from step 1 for the same run.
-
-- These commands **overwrite** the committed reports with your model's numbers, which will be close
-  to but not identical with the committed ones.
-- Each command also accepts `--run <run_id>` for a one-off run, but then the tests that compare the
-  saved reports with `evaluation.model_run` will fail.
-
-**Final test evaluation: done once.** `scripts/run_eval.sh` (`python -m src.evaluation.evaluate_test`)
-ran the plan committed in [reports/TEST_PLAN.md](reports/TEST_PLAN.md) on fold 10 and wrote
-`reports/metrics.json`. It refuses to open fold 10 again: every opening is recorded in
-`reports/fold10_access_log.jsonl`, and a rerun is only allowed after a documented bug fix in the
-evaluation code. `--rehearse <folder>` runs the same pipeline on fold 9 only.
-
-## Running the API
-
-```bash
+```powershell
 python -m src.api.main
 ```
 
-Serves the frozen release model on `http://127.0.0.1:8000` (`api.host` and `api.port` in
-[config/default.yaml](config/default.yaml)); interactive documentation is at `/docs`. It needs the
-same local files as the evaluation: the data cache and `checkpoints/release.pt`. At startup it checks
-`release.pt`, `reports/calibration.json` and `reports/thresholds.json` against the SHA-256 values in
-`reports/release.json`, and, if `reports/metrics.json` exists, that it was computed with them and
-that every test-set figure it lists is a PNG in `reports/figures/`; if anything differs it stops with
-an error instead of serving. Without `metrics.json` (the test evaluation not run yet) it serves the
-demo, logs a warning, and answers 404 on `/api/metrics` and `/api/figures`. By default it runs on the GPU (`api.device`) and
-refuses to start without one; set `api.device: cpu` to serve on the CPU.
+It loads and checks the release model and serves it on `http://127.0.0.1:8000`; it is ready when it
+logs `Application startup complete`. In the second:
 
-| Endpoint | Returns |
-|---|---|
-| `GET /api/health` | Status and model version |
-| `GET /api/records` | The ids of the 2,158 held-out test records (fold 10). No labels, no patient data |
-| `GET /api/records/{id}/signal` | The record's 12 leads x 1000 samples in mV, before normalisation |
-| `POST /api/predict` | JSON `{"record_id": "<id>"}`, or a form upload with files `hea` and `dat` (a WFDB record) |
-| `GET /api/records/{id}/truth` | The record's labels, only after `POST /api/predict` for that record (409 before) |
-| `GET /api/metrics` | `reports/metrics.json`, byte for byte |
-| `GET /api/figures/{name}` | A test-set figure listed under `figures` in `metrics.json` (`roc`, `pr`, `confusion_max_f1`, `confusion_high_sensitivity`, `reliability`), as PNG |
-
-A prediction gives every class its calibrated probability. The four abnormal classes also get their
-high-sensitivity threshold and a flag (probability >= threshold); NORM gets no flag. It adds the
-summary ("N of 4 abnormal categories flagged"), the Grad-CAM map of the abnormal class with the
-highest probability (1000 values in [0, 1]), the model version and the inference time.
-
-```bash
-curl -s -X POST http://127.0.0.1:8000/api/predict -H "Content-Type: application/json" -d "{\"record_id\": \"9\"}"
-```
-
-Uploads must be 12-lead WFDB records in mV, exactly 10 s long, at a whole-number sampling rate;
-other rates are resampled to 100 Hz. Anything else is refused with a 400 and the reason. The request
-is capped at 1 MiB (`api.upload.max_request_bytes`), and the two files are deleted as soon as the
-request ends. The API serves the held-out test records for the demo and computes no metrics. The
-browser may call it only from the Vite dev server's origin (`api.cors_origins`).
-
-## Running the frontend
-
-With the API running, in a second terminal:
-
-```bash
+```powershell
 cd frontend
 npm ci
 npm run dev
 ```
 
-Then open `http://localhost:5173`. The dev server takes its address from `api.cors_origins` and calls
-the API at `api.host:api.port`, both read from [config/default.yaml](config/default.yaml), so the page
-always runs on the one origin the API accepts. If that port is taken, the dev server stops with an
-error instead of moving to another port, where the API would refuse its requests.
+Then open **http://localhost:5173**. `npm ci` needs the internet once; after that the app works fully
+offline (the font is bundled, and nothing is fetched from a CDN). The address of the API and the one
+browser origin it accepts are set in `api.host`, `api.port` and `api.cors_origins` in
+[config/default.yaml](config/default.yaml).
 
-The first screen lists the held-out test records from `GET /api/records`, searchable by ID, and
-accepts a `.hea` + `.dat` upload by drag and drop. Rejected uploads show the API's own message (400,
-or 413 above the size limit). If the API is not running, the screen says so and offers a retry. The
-page computes no numbers: everything it shows comes from an API response, and a response that does
-not match the API's schemas is shown as an error rather than displayed.
+### Running on the CPU
 
-The Result screen draws the chosen lead (named in clinical spelling: aVR, aVL, aVF) on an ECG grid,
-with the model's attention band behind the trace only when at least one abnormal category is
-flagged, then one row per class. The Model performance screen shows `reports/metrics.json` from
-`GET /api/metrics` and the test-set figures from `GET /api/figures/{name}`: ranking (AUROC, AUPRC),
-both operating points, the feature baseline, calibration, seed stability (labelled as validation)
-and the limitations, each estimate with its 95% interval. Without `metrics.json` it shows an empty
-state and no numbers.
+Without a GPU, the API refuses to start rather than silently switching device. Set this in
+[config/default.yaml](config/default.yaml):
 
-| Command (in `frontend/`) | Does |
+```yaml
+api:
+  device: cpu
+```
+
+The CPU gives the same flags as the GPU: for test records 9, 63 and 38 the calibrated probabilities
+differ by less than 0.001. One prediction with its attention map takes a few tenths of a second
+instead of tens of milliseconds. For training and the evaluation scripts, set `training.device: cpu`
+the same way (CPU training is much slower and gives a close but not identical model).
+
+### 6. Reproduce training
+
+```powershell
+python -m pytest tests/test_cuda.py        # the GPU is visible and computes correctly
+python -m src.training.train --overfit     # sanity check: memorises 50 records, prints "Overfit check PASSED"
+python -m src.training.train --name main   # the full run: folds 1-8, early stopping on fold 9
+```
+
+A full run takes about 5 minutes on a 4 GB laptop GPU. It writes the weights to
+`checkpoints/<run id>/best.pt` (not committed) and the per-epoch log and run record to
+`reports/runs/`. `python -m src.models.baselines` fits the two baselines. With the same code, config,
+seed and GPU, a run is bit-for-bit repeatable; on other hardware it is close but not identical.
+
+### 7. Reproduce the evaluation
+
+The **validation** evaluation (calibration, thresholds, figures, Grad-CAM) can be re-run on your own
+model. Set `evaluation.model_run` in [config/default.yaml](config/default.yaml) to your run id (printed
+at the start of training), then:
+
+```powershell
+python -m src.training.calibrate      # calibrators, thresholds, validation metrics and figures
+python -m src.explain.gradcam_val     # Grad-CAM maps and the randomisation check
+```
+
+These overwrite the committed validation reports with your model's numbers. The **test** evaluation
+(`python -m src.evaluation.evaluate_test`) has been run once and refuses to open fold 10 again: the
+access log already has its one entry, and a rerun is allowed only after a documented bug fix in the
+evaluation code. `python -m src.evaluation.evaluate_test --rehearse <folder>` runs the same pipeline on
+fold 9 instead, writing into `<folder>`.
+
+## Methods
+
+### Data and patient-wise splits
+
+PTB-XL 1.0.3 has 21,799 ten-second, 12-lead ECGs from 18,869 patients, here at 100 samples per
+second (12 × 1000 values per record). Each record's diagnostic statements are mapped to five
+superclasses: NORM, MI, STTC, CD and HYP. 411 records with no diagnostic statement are dropped,
+leaving 21,388 records from 18,617 patients.
+
+**Splits are by patient**, using the dataset's own `strat_fold` column: folds 1–8 train the model
+(17,084 records), fold 9 chooses everything that is tuned (2,146 records), and fold 10 is the test
+set (2,158 records from 1,877 patients). All records of a patient sit in one fold, so the model is
+never scored on a patient it has seen; a test asserts that no patient appears in two splits, and a
+software lock stops code from loading fold 10 by accident. Signals are z-scored per lead with
+statistics from the training folds only.
+
+### Model and training
+
+A 1D ResNet: a convolutional stem, four stages of two residual blocks (64 to 512 channels, halving
+the time axis three times), global average pooling and a linear layer with **one output per class**.
+Each output has its own sigmoid; there is no softmax, because the classes are not mutually exclusive.
+
+| Choice | Value |
 |---|---|
-| `npm test` | Unit tests: record search, upload file handling, API error handling, ECG strip geometry, Result and Performance wording (the latter on the real `metrics.json`); no network |
-| `npm run test:contract` | The client against the running API: every response must pass its schemas |
-| `npm run typecheck`, `npm run lint` | TypeScript and oxlint |
-| `npm run build` | Production build in `frontend/dist/` |
+| Loss | `BCEWithLogitsLoss` with a per-class **`pos_weight`** = negatives ÷ positives in the training folds (1.25 for NORM up to 7.06 for HYP), so rare classes are not ignored |
+| Optimiser | AdamW, learning rate 1e-3, weight decay 1e-2; 2-epoch warm-up, then cosine decay |
+| Batch size | 64 (fits a 4 GB GPU) |
+| Augmentation (training only) | time shift up to ±2 s and Gaussian noise. Never time reversal or sign flips, which change an ECG's meaning |
+| Model selection | best fold-9 macro AUROC; stop after 8 epochs without improvement |
+| Seed | 42, with deterministic GPU kernels |
+
+Every setting lives in [config/default.yaml](config/default.yaml); every run records its effective
+config, git commit, seed and software environment.
+
+### Calibration: Platt scaling, and why temperature alone failed
+
+`pos_weight` makes the network's raw probabilities overstate every class: for a record whose true
+chance of a class is *q*, the weighted loss is lowest at a logit of `logit(q) + log(pos_weight)`, an
+upward **offset** that is largest for the rarest class. The chosen epoch is also slightly
+**overconfident** (logits too large). Two per-class calibrators were fitted on fold 9:
+
+- **Temperature scaling**, `sigmoid(logit / T)`, can only shrink or stretch the logits; a logit of 0
+  always stays at probability 0.5, so it cannot remove an offset. On fold 9 it made the expected
+  calibration error (ECE) of all four abnormal classes **worse**, for example MI from 0.078 to 0.089 and
+  HYP from 0.109 to 0.124: shrinking every logit lifted the many low-scoring records towards 0.5.
+- **Platt scaling**, `sigmoid(a · logit + b)`, adds a bias. Its fitted `b` was negative for every
+  class and grew with `pos_weight` (MI −0.94 up to HYP −1.49), exactly the offset the argument above
+  predicts, and its slopes `a` of 0.62–0.74 removed the overconfidence. Fold-9 macro ECE fell from
+  0.089 to 0.016.
+
+Per class, the calibrator with the lower fold-9 ECE was kept: Platt for MI, STTC, CD and HYP,
+temperature for NORM (where the two were within 0.0002). Both are strictly increasing, so AUROC and
+AUPRC do not change. On the test set the calibrated macro ECE is 0.015 (table above).
+
+### Operating points
+
+A class is flagged when its calibrated probability reaches that class's threshold, chosen on fold 9.
+The app uses the **high-sensitivity point**: for each abnormal class, the strictest threshold that
+still flagged at least 90% of fold-9 cases, because the project treats a missed abnormality as costlier
+than a false alarm. NORM gets a probability but no flag. A second, **max-F1** point (best balance of
+precision and sensitivity) is reported in [reports/TEST_RUN.md](reports/TEST_RUN.md).
+
+### The amplitude-scaling ablation
+
+Random amplitude scaling (multiplying a record by 0.8–1.2 during training) was tested with pairs of
+runs that differ only in that setting, three seeds each, on fold 9. The rule fixed beforehand: keep
+it off unless it gives the higher mean HYP AUPRC.
+
+| Fold 9, mean ± std over 3 seeds | Scaling on | Scaling off | Off better in |
+|---|---:|---:|---:|
+| HYP AUPRC | 0.6574 ± 0.0051 | 0.6688 ± 0.0030 | 3 of 3 seeds |
+| CD AUPRC | 0.8582 ± 0.0047 | 0.8525 ± 0.0084 | 0 of 3 seeds |
+| Macro AUROC | 0.9270 ± 0.0003 | 0.9279 ± 0.0009 | 3 of 3 seeds |
+
+Scaling stays **off**. It trades HYP for CD: a plausible, untested reason is that hypertrophy criteria
+depend on absolute voltage, which scaling blurs, while conduction disturbances depend on timing. Three
+seeds are few, and only one seed's bootstrap interval for the HYP difference excludes zero. Details:
+[docs/EXPERIMENTS_AND_RESULTS.md](docs/EXPERIMENTS_AND_RESULTS.md#5-amplitude-scaling-experiment).
+
+### Grad-CAM and its randomisation check
+
+The attention band is **Grad-CAM** adapted to 1D: the gradients of one class's logit weight the
+feature maps of the last residual stage, which are then interpolated back to the 1000 samples. The
+map has one value every 0.32 s, each drawing on a window of up to 8.6 s, and it is shared by all 12
+leads. The app computes it for the most probable abnormal class and shows it only when at least one
+category is flagged.
+
+**Randomisation check** (Adebayo et al., 2018): if the maps barely changed when the trained weights
+were replaced with random ones, they would reflect only the input signal. For one fold-9 record per
+class, trained and random-model maps shared little (mean |Spearman ρ| about 0.2, against a pass limit
+of 0.5), so the check passed. The evidence is limited: 5 records, 3 of the 15 random maps were empty
+and left out by a rule added after the first run, and one pair reached ρ = 0.60. Details:
+[docs/EXPLAINABILITY.md](docs/EXPLAINABILITY.md).
+
+## Error analysis
+
+From the 10 most confident misses and 10 most confident false alarms on the **validation fold** at
+the high-sensitivity point ([reports/error_analysis.md](reports/error_analysis.md)):
+
+- **The misses are uncertain labels and rarer sub-types, not noisy recordings.** Only 1 of the 10 has
+  a signal-quality note in PTB-XL (against 31% of all validation records). All three missed MIs rest on
+  a single MI statement of likelihood 15; across the fold such MI labels are missed 24% of the time
+  (27 of 114), against 5% (14 of 283) at likelihood 100.
+- **Common sub-types are learned better than rare ones.** Left-ventricular hypertrophy is missed in 5%
+  of HYP cases (11 of 210), atrial enlargement in 21–40%; non-specific intraventricular conduction
+  delay causes 27 of the 49 CD misses.
+- **False alarms usually carry another abnormality.** 7 of the 10 confident false alarms are ST/T
+  flags, and 6 of those 7 records carry LVH or MI statements, conditions that themselves change the ST
+  segment and T wave. Every abnormal class is flagged 1.8 to 3.5 times as often on records with another
+  abnormality as on normal records.
+
+So the main error sources are label uncertainty and overlap between PTB-XL's superclasses, not signal
+quality: a clinician reviewing a confident false alarm would usually find a real abnormality with a
+different label.
+
+## Limitations
+
+The same list as on the app's Model performance screen:
+
+- Single dataset (PTB-XL 1.0.3) from one source; results may not hold for other hospitals or devices.
+- No external or prospective validation.
+- Hypertrophy is the weakest class (lowest test AUPRC and AUROC): at the high-sensitivity point about 7 in 10 HYP flags are false alarms (545 of 778 flags on the test set).
+- Many missed cases have uncertain labels (low likelihood in PTB-XL), most clearly for myocardial infarction. This comes from the error analysis on the validation split, not from the test set.
+- Attention maps show where the model responded, not a clinical reason; they are shared across leads and coarse in time, so they cannot point to a single beat or wave.
+- Screening aid, not a diagnostic device.
+
+## Dataset, licence and citation
+
+**PTB-XL, version 1.0.3**, published on PhysioNet under the **Creative Commons Attribution 4.0
+International (CC BY 4.0)** licence. It is **not stored in this repository**: `python -m
+src.data.download` fetches it and checks it against PhysioNet's checksums (`data/` is git-ignored).
+Cite the dataset and its paper:
+
+- Wagner, P., Strodthoff, N., Bousseljot, R.-D., Kreiseler, D., Lunze, F. I., Samek, W., &
+  Schaeffter, T. (2020). PTB-XL, a large publicly available electrocardiography dataset.
+  *Scientific Data*, 7, 154. https://doi.org/10.1038/s41597-020-0495-6
+- Wagner, P., Strodthoff, N., Bousseljot, R., Samek, W., & Schaeffter, T. (2022). *PTB-XL, a large
+  publicly available electrocardiography dataset* (version 1.0.3). PhysioNet.
+  https://doi.org/10.13026/kfzx-aw45
+- PhysioNet's standard citation: Goldberger, A., et al. (2000). PhysioBank, PhysioToolkit, and
+  PhysioNet: Components of a new research resource for complex physiologic signals. *Circulation*,
+  101(23), e215–e220.
+
+The committed model weights (`checkpoints/release.pt`) were trained on PTB-XL and are shared under the
+same attribution.
+
+## The app's API
+
+`python -m src.api.main` serves the frozen release model. At startup it checks `release.pt`,
+`reports/calibration.json` and `reports/thresholds.json` against the SHA-256 values in
+`reports/release.json`, and that `reports/metrics.json` was computed with them; if anything differs it
+stops with an error. Without `metrics.json` it still serves predictions and answers 404 on the two
+metrics endpoints, and the Model performance screen shows an empty state.
+
+| Endpoint | Returns |
+|---|---|
+| `GET /api/health` | Status and model version |
+| `GET /api/records` | The ids of the 2,158 held-out test records. No labels, no patient data |
+| `GET /api/records/{id}/signal` | The record's 12 leads × 1000 samples in mV |
+| `POST /api/predict` | JSON `{"record_id": "<id>"}`, or a form upload with files `hea` and `dat` |
+| `GET /api/records/{id}/truth` | The record's labels, only after it was predicted (409 before) |
+| `GET /api/metrics` | `reports/metrics.json`, byte for byte |
+| `GET /api/figures/{name}` | A test-set figure listed in `metrics.json`, as PNG |
+
+Uploads must be 12-lead WFDB records in mV, exactly 10 s long, at a whole-number sampling rate (other
+rates are resampled to 100 Hz); anything else is refused with a 400 and the reason. Requests are
+capped at 1 MiB and uploaded files are deleted when the request ends.
+
+Frontend checks, in `frontend/`: `npm test` (unit tests, no network), `npm run test:contract` (the
+client against the running API), `npm run typecheck`, `npm run lint`, `npm run build`.
 
 ## Project structure
 
 ```text
 ecg-screening/
 ├── config/default.yaml      # every setting and hyperparameter
-├── docs/                    # detailed documentation
 ├── src/
-│   ├── data/                # download, labels, splits, cache, normalisation, augmentation, test lock
-│   ├── models/              # resnet1d.py, baselines.py, rpeak_check.py
-│   ├── training/            # train.py, calibrate.py, compare_runs.py, summarize_comparisons.py
-│   ├── evaluation/          # metrics, thresholds, calibration, plots, evaluate_val.py; error_analysis.py (placeholder)
-│   ├── explain/             # gradcam1d.py, gradcam_val.py, figures.py
-│   ├── api/                 # FastAPI backend: main.py, service.py, upload.py, schemas.py
-│   ├── config.py            # loads the config
-│   └── provenance.py        # records the git commit in every report
-├── tests/                   # pytest suite
-├── reports/
-│   ├── *.json               # validation reports: baselines, calibration, thresholds, metrics, Grad-CAM
-│   ├── figures/             # all figures
-│   └── runs/                # one CSV and one JSON per training run, plus run comparisons
-├── scripts/                 # run_training.sh; run_eval.sh (the one-time test evaluation)
-├── frontend/                # React app: src/lib/api.ts (typed API client), src/pages/, src/components/
-├── data/                    # PTB-XL download and cache (created locally, not in git)
-├── checkpoints/             # trained weights (created locally, not in git)
-├── PROJECT_SPEC.md          # build specification
-└── requirements.txt         # pinned Python dependencies
+│   ├── data/                # download, labels, patient-wise splits, cache, normalisation, augmentation, test lock
+│   ├── models/              # resnet1d.py (the CNN), baselines.py
+│   ├── training/            # train.py, calibrate.py, run comparisons
+│   ├── evaluation/          # metrics, thresholds, calibration, plots, error analysis, release freeze,
+│   │                        # evaluate_test.py (the one-time test run), doc_tables.py (this README's tables)
+│   ├── explain/             # Grad-CAM 1D and its randomisation check
+│   └── api/                 # FastAPI backend
+├── frontend/                # React + TypeScript + Tailwind app (three screens)
+├── tests/                   # pytest suite, including the patient-leakage test (tests/test_splits.py)
+├── reports/                 # every number and figure, written by scripts; metrics.json is the test result
+├── checkpoints/release.pt   # the frozen release model (the only committed weights)
+├── docs/                    # detailed documentation
+├── DEMO.md                  # the live-demo script
+└── PROJECT_SPEC.md          # the build specification
 ```
 
-Every number and figure in `reports/` is written by a script; nothing in it is typed in by hand.
+Detailed documentation, with every number traced to a report:
 
-## Reproducibility and limitations
+| Document | Contents |
+|---|---|
+| [docs/DATA_PIPELINE.md](docs/DATA_PIPELINE.md) | Download checks, labels, splits, cache, normalisation, augmentation, test-set lock |
+| [docs/MODEL_AND_TRAINING.md](docs/MODEL_AND_TRAINING.md) | Architecture, loss, schedule, run records, reproducibility, training curves |
+| [docs/EXPERIMENTS_AND_RESULTS.md](docs/EXPERIMENTS_AND_RESULTS.md) | Baselines, full validation results, amplitude-scaling experiment |
+| [docs/CALIBRATION_AND_EVALUATION.md](docs/CALIBRATION_AND_EVALUATION.md) | Metric definitions, calibration, operating points |
+| [docs/EXPLAINABILITY.md](docs/EXPLAINABILITY.md) | Grad-CAM method, randomisation check, example maps and their limits |
+| [reports/TEST_PLAN.md](reports/TEST_PLAN.md), [reports/TEST_RUN.md](reports/TEST_RUN.md) | The pre-registered test plan and the one-time test run |
 
-**Reproducibility.**
-
-- All settings are in one config file, and every run records its effective config, git commit, seed
-  and software environment.
-- A fixed seed and deterministic GPU kernels give bit-identical runs on the same machine; this was
-  checked on a full training run.
-- Results differ slightly across GPUs, on the CPU, and with a different number of data-loading
-  workers.
-- Each report records the git commit it came from and whether the tree had uncommitted changes. All
-  training runs and validation reports come from clean commits; only the three-seed summary
-  (`reports/runs/summary_amplitude_scale_seeds.json`) was generated while its own script was still
-  uncommitted.
-
-**Evaluation status.** The test split (fold 10) was never used to train, tune or select anything. It
-was scored once, on 2026-10-19, with the frozen model, calibration and thresholds, following a plan
-committed beforehand ([reports/TEST_PLAN.md](reports/TEST_PLAN.md)): macro AUROC 0.926 [0.918, 0.933], macro AUPRC 0.819 [0.802, 0.833] (95% patient-bootstrap intervals). Results and the
-comparison with validation are in [reports/TEST_RUN.md](reports/TEST_RUN.md).
-
-**Limitations.**
-
-- **Not for medical use.** This is a course project. It has no regulatory approval, no clinical
-  validation and no prospective or external testing, and it must not inform any medical decision.
-- **One dataset.** PTB-XL is a single public dataset collected in Germany. Results may not hold for
-  other hospitals, recording devices or populations.
-- **Class imbalance.** HYP is present in only 12.5% of validation records and is the hardest class
-  (AUPRC 0.67). At the max-F1 threshold the model misses 42% of validation HYP cases.
-- **False negatives and false positives.** Every threshold trades one for the other. On the
-  validation records used to pick the high-sensitivity thresholds, about one in ten abnormal records
-  is still missed and many flags are false alarms; on new data more cases are likely to be missed.
-- **Probabilities are not clinical risk.** Calibration was fitted on PTB-XL validation data and is
-  only meaningful for similar data.
-- **Grad-CAM is not an explanation.** The maps show model attention at a resolution of about a third
-  of a second and do not prove that the model uses medically correct features.
-- **Small experiments.** The amplitude-scaling decision rests on three seeds.
-- **Not yet done:** the band-pass filter comparison.
-
-## References and licence
-
-### Dataset
-
-PTB-XL is released by PhysioNet under the **Creative Commons Attribution 4.0 International (CC BY
-4.0)** licence. Use of the data requires attribution. Cite the dataset and its paper:
-
-- Wagner, P., Strodthoff, N., Bousseljot, R., Samek, W., & Schaeffter, T. (2022). *PTB-XL, a large
-  publicly available electrocardiography dataset* (version 1.0.3). PhysioNet.
-  https://doi.org/10.13026/kfzx-aw45
-- Wagner, P., Strodthoff, N., Bousseljot, R.-D., Kreiseler, D., Lunze, F. I., Samek, W., &
-  Schaeffter, T. (2020). PTB-XL, a large publicly available electrocardiography dataset.
-  *Scientific Data*, 7, 154. https://doi.org/10.1038/s41597-020-0495-6
-
-PhysioNet also asks for its standard citation. The PTB-XL page currently gives:
-
-- Pollard, T., Moody, B. E., Lehman, L., Gow, B., Fernandes, C., Xie, C., Johnson, A., Mark, R. G., &
-  Heldt, T. (2026). PhysioNet as a global platform for biomedical research. *Nature Health*.
-  https://doi.org/10.1038/s44360-026-00096-z
-
-PhysioNet's earlier standard citation:
-
-- Goldberger, A., et al. (2000). PhysioBank, PhysioToolkit, and PhysioNet: Components of a new
-  research resource for complex physiologic signals. *Circulation*, 101(23), e215–e220.
-
-### Methods
+## References
 
 - He, K., Zhang, X., Ren, S., & Sun, J. (2016). Deep residual learning for image recognition.
   *CVPR 2016*, 770–778.
-- Ribeiro, A. H., et al. (2020). Automatic diagnosis of the 12-lead ECG using a deep neural network.
-  *Nature Communications*, 11, 1760.
 - Strodthoff, N., Wagner, P., Schaeffter, T., & Samek, W. (2021). Deep learning for ECG analysis:
   Benchmarks and insights from PTB-XL. *IEEE Journal of Biomedical and Health Informatics*, 25(5),
   1519–1528.
-- Pan, J., & Tompkins, W. J. (1985). A real-time QRS detection algorithm. *IEEE Transactions on
-  Biomedical Engineering*, BME-32(3), 230–236.
 - Guo, C., Pleiss, G., Sun, Y., & Weinberger, K. Q. (2017). On calibration of modern neural
   networks. *ICML 2017*.
 - Platt, J. (1999). Probabilistic outputs for support vector machines and comparisons to regularized
   likelihood methods. In *Advances in Large Margin Classifiers*. MIT Press.
-- Zhou, B., Khosla, A., Lapedriza, A., Oliva, A., & Torralba, A. (2016). Learning deep features for
-  discriminative localization. *CVPR 2016*, 2921–2929.
 - Selvaraju, R. R., et al. (2017). Grad-CAM: Visual explanations from deep networks via
   gradient-based localization. *ICCV 2017*, 618–626.
 - Adebayo, J., et al. (2018). Sanity checks for saliency maps. *NeurIPS 2018*.
-- Luo, W., Li, Y., Urtasun, R., & Zemel, R. (2016). Understanding the effective receptive field in
-  deep convolutional neural networks. *NeurIPS 2016*.
-
-### Code
 
 This repository does not yet include a licence file for its own code.
