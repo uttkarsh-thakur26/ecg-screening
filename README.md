@@ -33,7 +33,7 @@ the build specification is [PROJECT_SPEC.md](PROJECT_SPEC.md), and every setting
 | Error analysis (validation) | Done: [reports/error_analysis.md](reports/error_analysis.md) |
 | Final test evaluation (`reports/metrics.json`) | Done once, 2026-10-19 (tag `v1.0-model`): [reports/TEST_RUN.md](reports/TEST_RUN.md) |
 | FastAPI backend (demo API on the frozen model) | Done: [Running the API](#running-the-api) |
-| React frontend | Screen 1 (choose a record or upload) done; Result and Performance screens are placeholders: [Running the frontend](#running-the-frontend) |
+| React frontend | Done: choose a record or upload, Result, Model performance: [Running the frontend](#running-the-frontend) |
 
 **Jump to:** [Installation](#installation-and-setup) · [Data](#downloading-and-preparing-the-data) ·
 [Training](#training-the-model) · [Results](#results-validation-only) ·
@@ -707,8 +707,10 @@ Serves the frozen release model on `http://127.0.0.1:8000` (`api.host` and `api.
 [config/default.yaml](config/default.yaml)); interactive documentation is at `/docs`. It needs the
 same local files as the evaluation: the data cache and `checkpoints/release.pt`. At startup it checks
 `release.pt`, `reports/calibration.json` and `reports/thresholds.json` against the SHA-256 values in
-`reports/release.json`, and checks that `reports/metrics.json` was computed with them; if anything
-differs it stops with an error instead of serving. By default it runs on the GPU (`api.device`) and
+`reports/release.json`, and, if `reports/metrics.json` exists, that it was computed with them and
+that every test-set figure it lists is a PNG in `reports/figures/`; if anything differs it stops with
+an error instead of serving. Without `metrics.json` (the test evaluation not run yet) it serves the
+demo, logs a warning, and answers 404 on `/api/metrics` and `/api/figures`. By default it runs on the GPU (`api.device`) and
 refuses to start without one; set `api.device: cpu` to serve on the CPU.
 
 | Endpoint | Returns |
@@ -719,6 +721,7 @@ refuses to start without one; set `api.device: cpu` to serve on the CPU.
 | `POST /api/predict` | JSON `{"record_id": "<id>"}`, or a form upload with files `hea` and `dat` (a WFDB record) |
 | `GET /api/records/{id}/truth` | The record's labels, only after `POST /api/predict` for that record (409 before) |
 | `GET /api/metrics` | `reports/metrics.json`, byte for byte |
+| `GET /api/figures/{name}` | A test-set figure listed under `figures` in `metrics.json` (`roc`, `pr`, `confusion_max_f1`, `confusion_high_sensitivity`, `reliability`), as PNG |
 
 A prediction gives every class its calibrated probability. The four abnormal classes also get their
 high-sensitivity threshold and a flag (probability >= threshold); NORM gets no flag. It adds the
@@ -756,9 +759,17 @@ or 413 above the size limit). If the API is not running, the screen says so and 
 page computes no numbers: everything it shows comes from an API response, and a response that does
 not match the API's schemas is shown as an error rather than displayed.
 
+The Result screen draws the chosen lead (named in clinical spelling: aVR, aVL, aVF) on an ECG grid,
+with the model's attention band behind the trace only when at least one abnormal category is
+flagged, then one row per class. The Model performance screen shows `reports/metrics.json` from
+`GET /api/metrics` and the test-set figures from `GET /api/figures/{name}`: ranking (AUROC, AUPRC),
+both operating points, the feature baseline, calibration, seed stability (labelled as validation)
+and the limitations, each estimate with its 95% interval. Without `metrics.json` it shows an empty
+state and no numbers.
+
 | Command (in `frontend/`) | Does |
 |---|---|
-| `npm test` | Unit tests: record search, upload file handling, API error handling (no network) |
+| `npm test` | Unit tests: record search, upload file handling, API error handling, ECG strip geometry, Result and Performance wording (the latter on the real `metrics.json`); no network |
 | `npm run test:contract` | The client against the running API: every response must pass its schemas |
 | `npm run typecheck`, `npm run lint` | TypeScript and oxlint |
 | `npm run build` | Production build in `frontend/dist/` |

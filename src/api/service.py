@@ -10,12 +10,14 @@ Loading (ReleaseService.__init__), in this order. Any failure raises, and the se
    calibration.json and thresholds.json still have the SHA-256 values pinned in reports/release.json; the calibration
    and thresholds belong to the release run; the thresholds cover exactly the classes they should.
 2. api.operating_point's thresholds cover the abnormal classes only and equal the values in the manifest.
-3. reports/metrics.json names the same model, calibration and thresholds.
+3. reports/metrics.json, if the one-time evaluation has been run, names the same model, calibration and thresholds,
+   and every test-set figure it lists is a PNG in paths.figures_dir; those figures are read into memory. Without
+   metrics.json the demo still serves the verified model, and GET /api/metrics answers 404 (src/api/main.py).
 4. release.pt is read into memory once, those bytes are hashed again and compared with the manifest, and the model is
    built from the same bytes, so the weights in memory are exactly the bytes that were checked.
 5. The signal cache is the one the model was trained and evaluated on (the checkpoint stores its SHA-256), and the test
    records are normalised with the training statistics by ECGDataset, as in the evaluation's loader. They must be the
-   records reports/metrics.json was computed on. The largest absolute amplitude of any training record is read from the
+   records reports/metrics.json was computed on, when it exists. The largest absolute amplitude of any training record is read from the
    same cache: uploads above it are refused (src/api/upload.py).
 6. One warm-up pass on the first test record (its result is discarded), so the first request's timing does not
    include CUDA start-up.
@@ -51,6 +53,7 @@ from src.models.resnet1d import ResNet1d, build_model
 from src.training.train import seed_everything
 
 RECORDS_PER_READ = 1024  # training records read at a time when scanning their amplitudes (about 50 MB)
+PNG_SIGNATURE = b"\x89PNG\r\n\x1a\n"
 
 
 class UnknownRecordError(KeyError):
@@ -126,6 +129,30 @@ def check_metrics_report(metrics: dict[str, Any], manifest: dict[str, Any]) -> N
         raise ValueError(f"reports/metrics.json was not computed with the frozen release: {wrong}")
 
 
+def read_figures(metrics: dict[str, Any], figures_dir: Path) -> dict[str, bytes]:
+    """{name: PNG bytes} for each test-set figure reports/metrics.json lists under "figures" (project-relative paths).
+
+    Only those files are served, and each must be a PNG directly in figures_dir, so a name in a request can never
+    reach another file. A listed figure that is missing or not a PNG is an error: the evaluation wrote them together.
+    """
+    listed = metrics.get("figures")
+    if not isinstance(listed, dict) or not listed:
+        raise ValueError("reports/metrics.json lists no test-set figures under 'figures'")
+    figures_dir = figures_dir.resolve()
+    figures = {}
+    for name, relative in listed.items():
+        path = project_path(relative).resolve()
+        if path.parent != figures_dir or path.suffix != ".png":
+            raise ValueError(f"metrics.json figure {name!r} is {relative!r}, not a .png in {figures_dir}")
+        if not path.is_file():
+            raise FileNotFoundError(f"metrics.json lists figure {name!r} at {path}, which does not exist")
+        data = path.read_bytes()
+        if not data.startswith(PNG_SIGNATURE):
+            raise ValueError(f"metrics.json figure {name!r} ({path}) is not a PNG file")
+        figures[name] = data
+    return figures
+
+
 class ReleaseService:
     """The release model, its frozen calibrators and thresholds, and the held-out test records. Thread-safe."""
 
@@ -148,13 +175,16 @@ class ReleaseService:
         if thresholds != manifest["thresholds"][point]:
             raise ValueError(f"thresholds.json's {point} thresholds differ from reports/release.json's")
 
-        # 3. The test metrics the API serves verbatim.
-        metrics_path = project_path(cfg["paths"]["reports_dir"]) / cfg["final_evaluation"]["metrics_file"]
-        if not metrics_path.is_file():
-            raise FileNotFoundError(f"No {metrics_path}: the one-time test evaluation has not been run")
-        self.metrics_bytes = metrics_path.read_bytes()
-        metrics = json.loads(self.metrics_bytes)
-        check_metrics_report(metrics, manifest)
+        # 3. The test metrics and figures the API serves verbatim, once the one-time evaluation has written them.
+        self.metrics_path = project_path(cfg["paths"]["reports_dir"]) / cfg["final_evaluation"]["metrics_file"]
+        self.metrics_bytes: bytes | None = None
+        self.figures: dict[str, bytes] = {}
+        metrics: dict[str, Any] | None = None
+        if self.metrics_path.is_file():
+            self.metrics_bytes = self.metrics_path.read_bytes()
+            metrics = json.loads(self.metrics_bytes)
+            check_metrics_report(metrics, manifest)
+            self.figures = read_figures(metrics, project_path(cfg["paths"]["figures_dir"]))
 
         # 4. The weights, built from the bytes that were hashed.
         self.device = api_device(api["device"])
@@ -171,7 +201,8 @@ class ReleaseService:
         ds = ECGDataset(run_cfg, "test", allow_test=True)  # the demo records; no metric is computed from them
         if list(ds.classes) != inputs.classes:
             raise ValueError(f"Test classes {list(ds.classes)} differ from the model's {inputs.classes}")
-        if len(ds) != metrics["records"] or ecg_id_digest(ds.ecg_ids) != metrics["ecg_ids_sha256"]:
+        if metrics is not None and (len(ds) != metrics["records"] or
+                                    ecg_id_digest(ds.ecg_ids) != metrics["ecg_ids_sha256"]):
             raise ValueError("The test records differ from the ones reports/metrics.json was computed on")
 
         self.model = model

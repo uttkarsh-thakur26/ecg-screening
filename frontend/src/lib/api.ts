@@ -114,6 +114,123 @@ const Truth = z.strictObject({
   classes: z.array(z.strictObject({ class: z.string(), label: z.string(), present: z.boolean() })),
 })
 
+// ------------------------------------------------------------------------------------------------ metrics.json
+
+// GET /api/metrics serves reports/metrics.json byte for byte: the one-time evaluation of the release model on the
+// held-out test split (src/evaluation/evaluate_test.py). These schemas type the parts the Performance screen shows, as
+// that file writes them; the parts it does not show (environment, checks, validation, ...) are not read. The screen
+// shows these numbers as they are and computes none of its own beyond rounding and counting.
+
+const Count = z.number().int().nonnegative()
+
+/** A bootstrapped metric: its value on all records and the percentile interval over resamples of patients. */
+const Estimate = z
+  .strictObject({ value: z.number(), ci_low: z.number(), ci_high: z.number() })
+  .refine((e) => e.ci_low <= e.ci_high, { message: 'ci_low is above ci_high' })
+
+const RankingFields = { auroc: Estimate, auprc: Estimate }
+const ClassRanking = z.strictObject({ ...RankingFields, n_positive: Count, n_negative: Count, prevalence: Probability })
+const MacroRanking = z.strictObject({ ...RankingFields, prevalence: Probability })
+
+const PointFields = { sensitivity: Estimate, specificity: Estimate, precision: Estimate, npv: Estimate, f1: Estimate }
+/** One class at one operating point: its frozen threshold, the confusion counts and the metrics they give. */
+const ClassPoint = z.strictObject({ threshold: Probability, tp: Count, fp: Count, fn: Count, tn: Count, ...PointFields })
+const MacroPoint = z.strictObject(PointFields)
+
+const PointCommon = { rule: z.string(), classes: z.array(z.string()).min(1), per_class: z.record(z.string(), ClassPoint) }
+const MaxF1Point = z.strictObject({ ...PointCommon, macro: MacroPoint, macro_abnormal: MacroPoint })
+const HighSensitivityPoint = z.strictObject({ ...PointCommon, macro_abnormal: MacroPoint,
+                                              target_sensitivity: Probability })
+
+/** Expected calibration error before and after the frozen calibrator; interval_note says why the intervals of ECE are
+ *  not confidence intervals (the screen shows the point values only). */
+const EceFields = { uncalibrated: Estimate, calibrated: Estimate, calibrated_minus_uncalibrated: Estimate }
+const ClassEce = z.object({ ...EceFields, calibrator: z.object({ method: z.enum(['temperature', 'platt']) }) })
+
+const SeedSpread = z.strictObject({ mean: z.number(), std: z.number().nonnegative() })
+
+const BaselineRanking = z.object({ macro: z.strictObject(RankingFields), macro_abnormal: z.strictObject(RankingFields) })
+
+/** The test-set figures, project-relative PNG paths. The API serves each at GET /api/figures/{name}. */
+const Figures = z.strictObject({
+  roc: z.string(),
+  pr: z.string(),
+  confusion_max_f1: z.string(),
+  confusion_high_sensitivity: z.string(),
+  reliability: z.string(),
+})
+
+const sameSet = (a: readonly string[], b: readonly string[]) =>
+  a.length === b.length && [...a].sort().join('\n') === [...b].sort().join('\n')
+
+const MetricsReport = z
+  .object({
+    description: z.string(),
+    date_evaluated: z.string(),
+    git: z.object({ commit: z.string().regex(/^[0-9a-f]{40}$/), dirty: z.boolean() }),
+    fold10_access_log: z.array(z.object({ opened_at: z.string(), rerun_reason: z.string().nullable() })).min(1),
+    reruns: z.array(z.unknown()),
+    dataset: z.object({ name: z.string(), version: z.string() }),
+    split: z.literal('test'),
+    folds: z.array(z.number().int()).min(1),
+    records: Count,
+    patients: Count,
+    classes: z.array(z.string()).min(1),
+    class_descriptions: z.record(z.string(), z.string()),
+    abnormal_classes: z.array(z.string()).min(1),
+    model: z.object({ version: z.string(), tag: z.string(), run_id: z.string() }),
+    bootstrap: z.object({ unit: z.string(), resamples: Count, ci_level: z.number().gt(0).lt(1) }),
+    ranking: z.object({
+      per_class: z.record(z.string(), ClassRanking),
+      macro: MacroRanking,
+      macro_abnormal: MacroRanking,
+    }),
+    operating_points: z.object({ max_f1: MaxF1Point, high_sensitivity: HighSensitivityPoint }),
+    calibration_error: z.object({
+      bins: Count,
+      interval_note: z.string(),
+      per_class: z.record(z.string(), ClassEce),
+      macro: z.strictObject(EceFields),
+    }),
+    baselines: z.object({
+      feature_gbdt: z.object({ description: z.string(), ranking: BaselineRanking }),
+      cnn_minus_feature_gbdt: z.object({ description: z.string(), ranking: BaselineRanking }),
+    }),
+    seed_stability: z.object({
+      description: z.string(),
+      split: z.literal('val'), // validation: the screen labels these numbers as such
+      std_definition: z.string(),
+      runs: z.array(z.object({ run_id: z.string(), seed: z.number().int() })).min(2),
+      macro_auroc: SeedSpread,
+      macro_auprc: SeedSpread,
+    }),
+    figures: Figures,
+  })
+  .superRefine((m, ctx) => {
+    // Every per-class table must cover exactly the classes the report lists, so no row can be missing or extra.
+    const problems: string[] = []
+    const covers = (what: string, keys: readonly string[], expected: readonly string[]) => {
+      if (!sameSet(keys, expected)) problems.push(`${what} covers ${keys.join(', ')}; expected ${expected.join(', ')}`)
+    }
+    covers('class_descriptions', Object.keys(m.class_descriptions), m.classes)
+    if (!m.abnormal_classes.every((c) => m.classes.includes(c))) problems.push('abnormal_classes are not all classes')
+    covers('ranking.per_class', Object.keys(m.ranking.per_class), m.classes)
+    covers('operating_points.max_f1.classes', m.operating_points.max_f1.classes, m.classes)
+    covers('operating_points.max_f1.per_class', Object.keys(m.operating_points.max_f1.per_class), m.classes)
+    covers('operating_points.high_sensitivity.classes', m.operating_points.high_sensitivity.classes,
+           m.abnormal_classes)
+    covers('operating_points.high_sensitivity.per_class', Object.keys(m.operating_points.high_sensitivity.per_class),
+           m.abnormal_classes)
+    covers('calibration_error.per_class', Object.keys(m.calibration_error.per_class), m.classes)
+    for (const message of problems) ctx.addIssue({ code: 'custom', message })
+  })
+
+export type Estimate = z.infer<typeof Estimate>
+export type ClassPoint = z.infer<typeof ClassPoint>
+export type MacroPoint = z.infer<typeof MacroPoint>
+export type MetricsReport = z.infer<typeof MetricsReport>
+export type FigureName = keyof z.infer<typeof Figures>
+
 export type Health = z.infer<typeof Health>
 export type RecordSummary = z.infer<typeof RecordSummary>
 export type Signal = z.infer<typeof Signal>
@@ -125,8 +242,9 @@ export type UploadPrediction = z.infer<typeof UploadPrediction>
 export type Prediction = RecordPrediction | UploadPrediction
 export type Truth = z.infer<typeof Truth>
 
-/** The schemas, for checking values that did not come straight from a response (for example, history state). */
-export const schemas = { RecordPrediction, UploadPrediction } as const
+/** The schemas, for checking values that did not come straight from a response (for example, history state, or
+ *  reports/metrics.json read from disk in a test). */
+export const schemas = { RecordPrediction, UploadPrediction, MetricsReport } as const
 
 // ------------------------------------------------------------------------------------------------ errors
 
@@ -169,33 +287,41 @@ function isAbort(error: unknown): boolean {
   return error instanceof DOMException && error.name === 'AbortError'
 }
 
-async function request<T>(method: 'GET' | 'POST', path: string, schema: z.ZodType<T>,
-                          init: RequestInit = {}): Promise<T> {
+/** One call: a 2xx response's body, read with `read`. No response at all is an 'unreachable' error, and an error
+ *  status an 'http' error carrying the API's own message. */
+async function call<B>(method: 'GET' | 'POST', path: string, init: RequestInit,
+                       read: (response: Response) => Promise<B>): Promise<{ endpoint: string; status: number; body: B }> {
   const endpoint = `${method} ${path}`
   let response: Response
-  let body: string
+  let body: { ok: true; value: B } | { ok: false; text: string }
   try {
     response = await fetch(`${API_BASE_URL}${path}`, { ...init, method })
-    body = await response.text()
+    body = response.ok ? { ok: true, value: await read(response) } : { ok: false, text: await response.text() }
   } catch (error) {
     if (isAbort(error)) throw error // the caller cancelled; not an API failure
     throw new ApiError('unreachable', endpoint, `No response from the API at ${API_BASE_URL} (${endpoint})`, null,
                        error)
   }
-  if (!response.ok) {
-    throw new ApiError('http', endpoint, errorMessage(response.status, response.statusText, body), response.status)
+  if (!body.ok) {
+    throw new ApiError('http', endpoint, errorMessage(response.status, response.statusText, body.text),
+                       response.status)
   }
+  return { endpoint, status: response.status, body: body.value }
+}
+
+async function request<T>(method: 'GET' | 'POST', path: string, schema: z.ZodType<T>,
+                          init: RequestInit = {}): Promise<T> {
+  const { endpoint, status, body } = await call(method, path, init, (r) => r.text())
   let json: unknown
   try {
     json = JSON.parse(body)
   } catch (error) {
-    throw new ApiError('invalid-response', endpoint, `${endpoint} returned a body that is not JSON`, response.status,
-                       error)
+    throw new ApiError('invalid-response', endpoint, `${endpoint} returned a body that is not JSON`, status, error)
   }
   const parsed = schema.safeParse(json)
   if (!parsed.success) {
     throw new ApiError('invalid-response', endpoint, `${endpoint} returned a response this page does not ` +
-                       `understand:\n${z.prettifyError(parsed.error)}`, response.status, parsed.error)
+                       `understand:\n${z.prettifyError(parsed.error)}`, status, parsed.error)
   }
   return parsed.data
 }
@@ -238,4 +364,25 @@ export function predictUpload(hea: File, dat: File, signal?: AbortSignal): Promi
 /** A test record's labels. The API answers 409 until that record has been predicted. */
 export function getTruth(id: string, signal?: AbortSignal): Promise<Truth> {
   return request('GET', `${recordPath(id)}/truth`, Truth, { signal })
+}
+
+/** reports/metrics.json, the one-time test-set evaluation. The API answers 404 when it has not been run. */
+export function getMetrics(signal?: AbortSignal): Promise<MetricsReport> {
+  return request('GET', '/api/metrics', MetricsReport, { signal })
+}
+
+/** The address of a test-set figure, for opening it at full size. */
+export function figureUrl(name: FigureName): string {
+  return `${API_BASE_URL}/api/figures/${encodeURIComponent(name)}`
+}
+
+/** A test-set figure listed in reports/metrics.json, as the PNG the evaluation wrote. */
+export async function getFigure(name: FigureName, signal?: AbortSignal): Promise<Blob> {
+  const { endpoint, status, body } = await call('GET', `/api/figures/${encodeURIComponent(name)}`, { signal },
+                                                (r) => r.blob())
+  if (body.type !== 'image/png') {
+    throw new ApiError('invalid-response', endpoint, `${endpoint} returned ${body.type || 'a body with no type'}, ` +
+                       'not a PNG image', status)
+  }
+  return body
 }

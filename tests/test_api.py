@@ -457,6 +457,58 @@ def test_metrics_are_served_verbatim(cfg, client):
     assert r.content == path.read_bytes()
 
 
+def test_test_set_figures_are_served_verbatim(cfg, client):
+    metrics = json.loads((project_path(cfg["paths"]["reports_dir"]) / cfg["final_evaluation"]["metrics_file"])
+                         .read_text(encoding="utf-8"))
+    assert sorted(metrics["figures"]) == sorted(cfg["final_evaluation"]["figures"])
+    for name, path in metrics["figures"].items():
+        r = client.get(f"/api/figures/{name}")
+        assert r.status_code == 200 and r.headers["content-type"] == "image/png"
+        assert r.content == project_path(path).read_bytes()
+
+
+@pytest.mark.parametrize("name", ["training_curves", "roc_curves_val", "roc_curves_test.png", "metrics"])
+def test_only_the_figures_metrics_json_lists_are_served(client, name):
+    r = client.get(f"/api/figures/{name}")
+    assert r.status_code == 404 and "reports/metrics.json lists" in r.json()["detail"]
+
+
+def test_without_metrics_json_the_demo_runs_and_metrics_answer_404(cfg, tmp_path):
+    reports = project_path(cfg["paths"]["reports_dir"])
+    for name in ("release.json", "calibration.json", "thresholds.json"):  # no metrics.json: evaluation not run
+        shutil.copyfile(reports / name, tmp_path / name)
+    no_eval = copy.deepcopy(cfg)
+    no_eval["paths"]["reports_dir"] = str(tmp_path)
+    with TestClient(create_app(no_eval)) as c:
+        assert c.get("/api/health").json()["model_loaded"] is True
+        for path in ("/api/metrics", "/api/figures/roc"):
+            r = c.get(path)
+            assert r.status_code == 404
+            assert "python -m src.evaluation.evaluate_test" in r.json()["detail"]
+
+
+def _metrics_with_figure(cfg, tmp_path, figure: str) -> dict:
+    reports = project_path(cfg["paths"]["reports_dir"])
+    for name in ("release.json", "calibration.json", "thresholds.json"):
+        shutil.copyfile(reports / name, tmp_path / name)
+    metrics = json.loads((reports / "metrics.json").read_text(encoding="utf-8"))
+    metrics["figures"]["roc"] = figure
+    (tmp_path / "metrics.json").write_text(json.dumps(metrics), encoding="utf-8")
+    bad = copy.deepcopy(cfg)
+    bad["paths"]["reports_dir"] = str(tmp_path)
+    return bad
+
+
+@pytest.mark.parametrize("figure, error, match", [
+    ("reports/figures/no_such_figure_test.png", FileNotFoundError, "does not exist"),
+    ("reports/metrics.json", ValueError, "not a .png in"),
+    ("reports/figures/../release.json", ValueError, "not a .png in"),
+], ids=["missing", "not a png", "outside the figures folder"])
+def test_startup_refuses_a_figure_metrics_json_cannot_back(cfg, tmp_path, figure, error, match):
+    with pytest.raises(error, match=match):
+        _start(_metrics_with_figure(cfg, tmp_path, figure))
+
+
 def test_cors_allows_only_the_local_frontend(client):
     preflight = {"access-control-request-method": "POST", "access-control-request-headers": "content-type"}
     r = client.options("/api/predict", headers={"origin": FRONTEND, **preflight})

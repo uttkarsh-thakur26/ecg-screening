@@ -11,7 +11,8 @@ SHA-256 in reports/release.json does not match, or any other check fails, startu
     GET  /api/records/{id}/signal    the 12 x 1000 signal in mV, before normalisation
     POST /api/predict                {"record_id": "<id>"} as JSON, or a multipart form with files "hea" and "dat"
     GET  /api/records/{id}/truth     the record's labels, only after POST /api/predict for that record (else 409)
-    GET  /api/metrics                reports/metrics.json, byte for byte
+    GET  /api/metrics                reports/metrics.json, byte for byte; 404 if the test evaluation has not been run
+    GET  /api/figures/{name}         a test-set figure listed under "figures" in reports/metrics.json, as PNG bytes
 
 Each class in a prediction gets its calibrated probability; the abnormal classes also get the threshold of
 api.operating_point and a flag (probability >= threshold). The normal class has no threshold and is never flagged.
@@ -144,6 +145,9 @@ def create_app(cfg: dict[str, Any]) -> FastAPI:
         log.info("Release model v%s (%s, sha256 %s) on %s; %s held-out test records", service.model_version,
                  service.model_tag, service.manifest["release_checkpoint"]["sha256"][:12], service.device,
                  f"{len(service.record_ids):,}")
+        if service.metrics_bytes is None:
+            log.warning("No %s: the one-time test evaluation has not been run. GET /api/metrics and /api/figures "
+                        "answer 404 until it has.", service.metrics_path)
         yield
 
     app = FastAPI(title="CardioScreen API", lifespan=lifespan,
@@ -223,9 +227,27 @@ def create_app(cfg: dict[str, Any]) -> FastAPI:
         sig = Signal(leads=s.leads, sampling_rate=s.sampling_rate_hz, units="mV", data=float32_list(record.signal))
         return prediction(s, result, info, sig)
 
+    def no_metrics(s: ReleaseService) -> HTTPException:
+        return HTTPException(404, f"There is no {s.metrics_path.name} in {s.metrics_path.parent}: the one-time test "
+                                  "evaluation (python -m src.evaluation.evaluate_test) has not been run, so there are "
+                                  "no test-set metrics or figures to show")
+
     @app.get("/api/metrics")
     def metrics(request: Request) -> Response:
-        return Response(content=service_of(request).metrics_bytes, media_type="application/json")
+        s = service_of(request)
+        if s.metrics_bytes is None:
+            raise no_metrics(s)
+        return Response(content=s.metrics_bytes, media_type="application/json")
+
+    @app.get("/api/figures/{name}")
+    def figure(name: str, request: Request) -> Response:
+        s = service_of(request)
+        if s.metrics_bytes is None:
+            raise no_metrics(s)
+        if name not in s.figures:
+            raise HTTPException(404, f"No test-set figure {name!r}; reports/metrics.json lists "
+                                     f"{', '.join(sorted(s.figures))}")
+        return Response(content=s.figures[name], media_type="image/png")
 
     return app
 

@@ -2,7 +2,10 @@
 // passes through the client's schemas (strict: an added, renamed or missing field fails), and the checks below hold
 // the API to what the screens rely on. Predicting a record unlocks its labels on that server, as in the demo.
 import { describe, expect, it } from 'vitest'
-import { ApiError, getHealth, getRecords, getSignal, getTruth, predictRecord, predictUpload } from './api'
+import {
+  ApiError, getFigure, getHealth, getMetrics, getRecords, getSignal, getTruth, predictRecord, predictUpload,
+  type FigureName,
+} from './api'
 
 async function failure(promise: Promise<unknown>): Promise<ApiError> {
   const error = await promise.then(() => null, (e: unknown) => e)
@@ -38,6 +41,18 @@ describe('the client against the running API', () => {
     const truth = await getTruth(record.id)
     expect(truth.id).toBe(record.id)
     expect(truth.classes.map((c) => c.class)).toEqual(prediction.predictions.map((c) => c.class))
+  })
+
+  it('reads the test-set metrics and every figure they list, and refuses any other figure', async () => {
+    const report = await getMetrics()
+    expect(report.split).toBe('test')
+    for (const name of Object.keys(report.figures) as FigureName[]) {
+      const figure = await getFigure(name)
+      expect(figure.type).toBe('image/png')
+      expect(figure.size).toBeGreaterThan(0)
+    }
+    const unknown = await failure(getFigure('training_curves' as FigureName))
+    expect(unknown).toMatchObject({ kind: 'http', status: 404, endpoint: 'GET /api/figures/training_curves' })
   })
 
   it("passes on the API's own message when it refuses a request", async () => {
