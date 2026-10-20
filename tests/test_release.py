@@ -79,9 +79,11 @@ def test_load_release_refuses_a_missing_checkpoint_or_another_run(fake_release):
 def test_committed_manifest_matches_the_files_on_disk(cfg):
     """reports/release.json pins release.pt, calibration.json and thresholds.json (needs the frozen checkpoint)."""
     if not project_path(cfg["release"]["checkpoint"]).is_file():
-        pytest.skip("checkpoints/release.pt is not present (checkpoints are not committed)")
+        pytest.skip("checkpoints/release.pt is not present (it is committed: check out the full repository)")
     manifest = load_release(cfg)
     assert manifest["model_version"] == cfg["release"]["model_version"]
     assert manifest["run"]["run_id"] == cfg["evaluation"]["model_run"]
     assert manifest["source_checkpoint"]["sha256"] == manifest["release_checkpoint"]["sha256"]
-    assert sha256_bytes(PROJECT_ROOT / manifest["source_checkpoint"]["path"]) == manifest["release_checkpoint"]["sha256"]
+    source = PROJECT_ROOT / manifest["source_checkpoint"]["path"]
+    if source.is_file():  # the training run's own best.pt is not committed; it exists only where the run trained
+        assert sha256_bytes(source) == manifest["release_checkpoint"]["sha256"]

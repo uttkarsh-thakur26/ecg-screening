@@ -4,8 +4,10 @@
 
 The release model is the best checkpoint of evaluation.model_run (the committed config, seed 42). Freezing it
 writes checkpoints/release.pt, a byte copy of that best.pt, the run's effective config next to it
-(release.config_file), and reports/release.json, the committed manifest: checkpoints/ is not committed, so the
-manifest pins the weights by SHA-256, together with the calibration and thresholds files they go with.
+(release.config_file), and reports/release.json, the committed manifest, which pins the weights by SHA-256 together
+with the calibration and thresholds files they go with. release.pt and its config are the only files of checkpoints/
+in git (committed after the test evaluation, so that a fresh clone can run the app); the manifest's description
+still says checkpoints/ is not committed, as it did when it was generated.
 
 Before copying anything it proves, on the validation split only, that the calibration and the thresholds were
 fitted on exactly this checkpoint:

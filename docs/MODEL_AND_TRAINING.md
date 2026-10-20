@@ -119,7 +119,8 @@ Every run writes two files to `reports/runs/` and refuses to overwrite an existi
 
 The run id is `<YYYYMMDD-HHMMSS>_<name>`. The checkpoint (about 25 MB) stores the weights, the
 config, the class and lead order, the epoch, git state, seed, `pos_weight`, validation metrics and
-the cache hash. Checkpoints are **not committed to git** (`checkpoints/` is in `.gitignore`).
+the cache hash. Training checkpoints are **not committed to git** (`checkpoints/` is in `.gitignore`); the one
+exception is the frozen release model, `checkpoints/release.pt`, and its config, so a fresh clone can run the app.
 
 ## 7. Reproducibility
 

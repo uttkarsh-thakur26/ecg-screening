@@ -207,7 +207,7 @@ release:                      # the frozen model, src/evaluation/release.py; fol
   model_version: "1.0"
   tag: v1.0-model             # git tag of the commit that holds the one-time test evaluation
   # A byte copy of checkpoints/<evaluation.model_run>/best.pt, with the run's effective config next to it.
-  # checkpoints/ is not committed, so the committed manifest (reports/release.json) pins the file by its SHA-256.
+  # release.pt is the one checkpoint in git; the committed manifest (reports/release.json) pins it by its SHA-256.
   checkpoint: checkpoints/release.pt
   config_file: checkpoints/release_config.yaml
   manifest_file: release.json # in paths.reports_dir

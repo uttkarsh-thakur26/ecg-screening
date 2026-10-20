@@ -1,7 +1,11 @@
-# Dataset, caches and model weights are never committed.
+# The dataset and caches are never committed. Model weights are not either, except the frozen release model
+# (checkpoints/release.pt, 25 MB, and the config it was trained with), so a fresh clone can run the app; the API checks
+# its SHA-256 against reports/release.json before serving it.
 # Anchored with a leading "/" so that the source package src/data/ is NOT ignored.
 /data/
-/checkpoints/
+/checkpoints/*
+!/checkpoints/release.pt
+!/checkpoints/release_config.yaml
 
 # Environments and dependencies
 .venv/
